@@ -2,13 +2,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Microsoft cloud sandbox",
+            "name": "Business Central Sandbox",
             "type": "al",
             "request": "launch",
             "environmentType": "Sandbox",
             "environmentName": "June9",
             "tenant": "19f16416-6c91-4c4b-8d75-43a20b8e8f13",
-            "startupObjectId": 90200,
+            "startupObjectId": 31,
             "startupObjectType": "Page",
             "breakOnError": "All",
             "launchBrowser": true,
