@@ -55,9 +55,46 @@ Per-tenant extension for Business Central (BC 28) and Microsoft Shopify Connecto
 
 ---
 
+## Runtime Test Results
+
+### Test 1 — Controlled Shopify Product Synchronization
+
+- **Status**: **PASS (single-product controlled runtime test: PASS)**
+
+#### Test Environment & Prerequisites
+- **BC Sandbox**: June9
+- **Shopify Shop**: APSS SHOP
+- **BC Item**: APSSDANID0004
+- **Item Description**: 440G-LZS21UPRH
+- **Shopify Product ID**: 16142496104751
+- **Shopify Product GID**: `gid://shopify/Product/16142496104751`
+- **Shopify Variant ID**: 58382185464111 *(Note: 58382185464111 is a Shopify ProductVariant ID belonging to Product 16142496104751, NOT a different product)*
+- **Item State**: BC Picture present (`Picture.Count > 0`), Blocked = No, Item Approved = Yes, Base UOM = EA, Inventory Posting Group = RESALE, VAT Prod. Posting Group = OUT_OF_SCOPE.
+- **Posting Setup**: Shop VAT Bus. Posting Group = GST_REGISTERED, VAT Posting Setup combination (`GST_REGISTERED` + `OUT_OF_SCOPE`) exists. APSS-AU location has valid Inventory Posting Setup for `RESALE`.
+- **Existing Mapping**: Shopify Product 16142496104751 exists on Shopify and is mapped to APSSDANID0004.
+
+#### Controlled Sync Execution & Results
+- **Test Harness**: A temporary test filter (`ShopifyProduct.SetFilter(Id, '16142496104751')`) was applied to subscriber `OnAfterProductsToSynchronizeFiltersSet` in `ShopifySyncEvents.Codeunit.al` to restrict `Shpfy Product Export` specifically to this single product. *(Note: This filter was a test-only harness and is NOT production functionality).*
+- **Sync Result**:
+  - The controlled export executed successfully for Product `16142496104751`.
+  - No unrelated Shopify Product IDs were processed in the test logs during this controlled run.
+  - Shopify metafield mutation succeeded without errors (`"userErrors": []`).
+  - Metafields returned by Shopify: `custom.incoterms`, `custom.uom`, `custom.description`.
+  - No Shopify API user errors were returned for this mutation.
+
+#### Important Clarifications & Notes
+- **Single-Product Controlled Test vs. UI Limitation**:
+  - `single-product controlled runtime test`: **PASS**
+  - Standard Shopify Connector UI Limitation: Page filters applied on the Shopify Products page (Page 30126) do not restrict Report 30108 ("Shpfy Sync Products"). The controlled single-product test was achieved via the event subscriber harness.
+- **Inventory Account Notifications**:
+  - Inventory Account notifications/warnings observed during general testing belong to known sandbox setup issues on unrelated unconfigured items. They do not constitute a Test 1 failure for Product `16142496104751`.
+
+---
+
 ## Production & Deployment Warning
 
 - Do not publish directly to production.
 - Test thoroughly in the BC 28 Sandbox environment.
 - Export the `.app` package and review code before promoting to Production.
+
 
