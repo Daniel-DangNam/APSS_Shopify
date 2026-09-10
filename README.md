@@ -1,100 +1,95 @@
-## APSS Shopify Enhancements
+# APSS Shopify Enhancements
 
-Per-tenant extension for Business Central (BC 28) and Microsoft Shopify Connector integration.
-
-## Summary of Features & Implementation
-
-### 1. Title Formatting (`ShopifyProductTitle.Codeunit.al`)
-- Builds Shopify product titles dynamically as: `Brand - Product Number - Description`.
-- Brand is derived from `Item."Manufacturer Code"`.
-- Product Number is derived from `Item."Vendor Item No."`.
-- Reused by both product synchronization and readiness validation logic.
-
-### 2. Readiness Checks & Image-Gate Guard (`ShopifySyncEvents.Codeunit.al`, `ItemCard.PageExt.al`, `ItemList.PageExt.al`)
-- Added fields to `Item`:
-  - `Has Shopify Image` (Boolean)
-  - `Shopify Ready` (Boolean)
-  - `Shopify Validation` (Text)
-- Provides actions on Item List / Item Card to refresh Shopify readiness status.
-- **Image-Gate (Safety Guard)**:
-  - Subscribes to `OnBeforeCreateShopifyProductVariant` and `OnBeforeUpdateShopifyProductVariant`.
-  - When an Item has no picture (`Item.Picture.Count = 0`), sets `Title := ''` to safely instruct the Shopify Connector to skip the item without deleting temporary variant records (preventing the `"The Shopify Variant table is empty"` runtime error).
-
-### 3. Product Metafield Automation (`ShopifySyncEvents.Codeunit.al`)
-- Subscribes to `OnBeforeUpdateProductMetafields(ProductId)` to construct and push product metafields to Shopify during product sync.
-
-### 4. Configuration & Launch Fixes (`.vscode/launch.json`)
-- Corrected `startupObjectId` in `launch.json` to `31` (Item List) to ensure smooth Web Client debugging (F5).
-
----
-
-## Setup & Publishing
-
-1. Open `app.json` and confirm platform, application, runtime, ID range, and Shopify Connector dependency versions match your Business Central environment.
-2. Open `.vscode/launch.json` and configure `environmentName` and `environmentType` (Sandbox).
-3. Run **AL: Download Symbols** (`Ctrl+Shift+P` -> `AL: Download Symbols`).
-4. Compile with `Ctrl+Shift+B`.
-5. Publish to Sandbox with `F5`.
-
----
-
-## Sandbox Testing Guide
-
-1. **Readiness Check**:
-   - Select an Item with `Manufacturer Code`, `Vendor Item No.`, `Description`, `Unit Price`, and an Item Picture.
-   - Run **Refresh Selected Shopify Readiness**.
-   - Confirm `Has Shopify Image` and `Shopify Ready` are `Yes`.
-
-2. **Image Guard Test**:
-   - Try synchronizing an Item without an image.
-   - Verify that the Connector skips the product safely without throwing `"The Shopify Variant table is empty"`.
-
-3. **Product Sync**:
-   - Set the Shopify Shop's created-product status to `Draft`.
-   - Run **Sync Products** to Shopify and verify the resulting product title format (`Brand - Part No - Description`) and metafields.
+Per-tenant extension for Business Central and Microsoft Shopify Connector integration.
 
 ---
 
 ## Runtime Test Results
 
-### Test 1 — Controlled Shopify Product Synchronization
+### TEST 1 — Shopify Product Metafield Auto-Population
 
-- **Status**: **PASS (single-product controlled runtime test: PASS)**
+Verifies the automatic product metafield population flow during product synchronization.
 
-#### Test Environment & Prerequisites
-- **BC Sandbox**: June9
-- **Shopify Shop**: APSS SHOP
-- **BC Item**: APSSDANID0004
-- **Item Description**: 440G-LZS21UPRH
-- **Shopify Product ID**: 16142496104751
-- **Shopify Product GID**: `gid://shopify/Product/16142496104751`
-- **Shopify Variant ID**: 58382185464111 *(Note: 58382185464111 is a Shopify ProductVariant ID belonging to Product 16142496104751, NOT a different product)*
-- **Item State**: BC Picture present (`Picture.Count > 0`), Blocked = No, Item Approved = Yes, Base UOM = EA, Inventory Posting Group = RESALE, VAT Prod. Posting Group = OUT_OF_SCOPE.
-- **Posting Setup**: Shop VAT Bus. Posting Group = GST_REGISTERED, VAT Posting Setup combination (`GST_REGISTERED` + `OUT_OF_SCOPE`) exists. APSS-AU location has valid Inventory Posting Setup for `RESALE`.
-- **Existing Mapping**: Shopify Product 16142496104751 exists on Shopify and is mapped to APSSDANID0004.
-
-#### Controlled Sync Execution & Results
-- **Test Harness**: A temporary test filter (`ShopifyProduct.SetFilter(Id, '16142496104751')`) was applied to subscriber `OnAfterProductsToSynchronizeFiltersSet` in `ShopifySyncEvents.Codeunit.al` to restrict `Shpfy Product Export` specifically to this single product. *(Note: This filter was a test-only harness and is NOT production functionality).*
-- **Sync Result**:
-  - The controlled export executed successfully for Product `16142496104751`.
-  - No unrelated Shopify Product IDs were processed in the test logs during this controlled run.
-  - Shopify metafield mutation succeeded without errors (`"userErrors": []`).
-  - Metafields returned by Shopify: `custom.incoterms`, `custom.uom`, `custom.description`.
-  - No Shopify API user errors were returned for this mutation.
-
-#### Important Clarifications & Notes
-- **Single-Product Controlled Test vs. UI Limitation**:
-  - `single-product controlled runtime test`: **PASS**
-  - Standard Shopify Connector UI Limitation: Page filters applied on the Shopify Products page (Page 30126) do not restrict Report 30108 ("Shpfy Sync Products"). The controlled single-product test was achieved via the event subscriber harness.
-- **Inventory Account Notifications**:
-  - Inventory Account notifications/warnings observed during general testing belong to known sandbox setup issues on unrelated unconfigured items. They do not constitute a Test 1 failure for Product `16142496104751`.
+- **Test Item**: `APSSDANID0004`
+- **Shop**: `APSS SHOP`
+- **Configuration**: Standard product sync with automatic metafield event handler active.
+- **Expected Behavior**: Metafields (`custom.incoterms`, `custom.uom`, `custom.description`) automatically construct and write to Shopify without requiring manual definition actions.
+- **Actual Result**: Metafields were successfully written to Shopify with `userErrors = []`.
+- **PASS/FAIL**: **PASS**
+- **Runtime & API Log Evidence**:
+  - **Shopify GraphQL Log 64844**: `metafieldsSet` mutation executed successfully.
+  - **Populated Fields**:
+    - `custom.incoterms`
+    - `custom.uom`
+    - `custom.description`
+  - **Shopify Response**: `userErrors = []`
+  - **Other Evidence**: Metafield values successfully verified in Shopify. No manual "Get Metafield Definitions" action was required for the tested item.
 
 ---
 
-## Production & Deployment Warning
+### TEST 2 — Shopify Product Image Readiness / Image Gate
 
-- Do not publish directly to production.
-- Test thoroughly in the BC 28 Sandbox environment.
-- Export the `.app` package and review code before promoting to Production.
+#### Test 2A — Readiness Validation
 
+Verifies the Shopify readiness validation rules on item records.
 
+- **Test Item**: `APSSDANID0004`
+- **Expected Behavior**: Accurately detect missing or invalid fields and set readiness status accordingly.
+- **Actual Result**:
+  - `Has Shopify Image` = `Yes` (BC Picture present)
+  - `Shopify Ready` = `No` (Item correctly remained not ready)
+  - `Validation Detected`:
+    - Missing product number
+    - Missing or invalid unit price
+  - `APSS Brand` runtime value = `ALLEN-BRADLEY`
+- **PASS/FAIL**: **PASS** (PASS for the tested readiness/validation rules; item correctly remained not ready because required fields were missing/invalid).
+
+---
+
+#### Test 2B — No Image Item Is Skipped
+
+Verifies that items without a BC picture are intercepted and excluded before reaching Shopify product creation.
+
+- **Test Item**: `APSS-TEST-BULK-005` (`Picture.Count() = 0`, `Blocked = No`, `Approved Item = Yes`)
+- **Add Items Configuration**:
+  - `Shop Code` = `APSS SHOP`
+  - `Sync Images` = OFF
+  - `Sync Inventory` = OFF
+  - `No.` = `APSS-TEST-BULK-005`
+  - `Blocked` = `No`
+  - `Approved Item` = `Yes`
+- **Expected Behavior**: The image gate prevents no-image items from running `ShopifyCreateProduct.Run(Item)` and creating products on Shopify.
+- **Actual Result**:
+  - Report 30106 ("Shpfy Add Item to Shopify") executed via **Product → Add Items → OK**.
+  - Operation completed/closed without creating a Shopify product.
+  - `APSS-TEST-BULK-005` was NOT created as a Shopify product in Shopify Admin.
+  - No BC Shopify Product mapping was created.
+  - No `productCreate` GraphQL log was generated.
+  - No Shopify error was observed.
+- **PASS/FAIL**: **PASS**
+- **Runtime Evidence**: Explicit absence of any `productCreate` GraphQL log confirmed that the image gate successfully stopped the item prior to API invocation.
+
+---
+
+#### Test 2C — Image Item Is Successfully Added
+
+Verifies that items with a BC picture are successfully processed and added to Shopify via Add Items.
+
+- **Test Item**: `APSS-TEST-BULK-004` (`Picture` = Yes)
+- **Add Items Configuration**:
+  - `Shop Code` = `APSS SHOP`
+  - `Sync Images` = ON
+  - `Sync Inventory` = OFF
+  - `Blocked` = `No`
+  - `Approved Item` = `Yes`
+- **Expected Behavior**: Item with image passes the report extension gate, creates BC Shopify Product mapping, and publishes product to Shopify Admin.
+- **Actual Result**:
+  - Item was successfully added to Shopify.
+  - Product was created and visible in BC Shopify Products mapping.
+  - Product was created and visible in Shopify Admin.
+- **PASS/FAIL**: **PASS**
+- **Creation Evidence (Log Numbers)**:
+  - **Log 64854**: `productCreate`
+  - **Log 64855**: `productVariantsBulkCreate`
+  - **Log 64856**: `publishablePublish`
+  *(Note: Log numbers 64854, 64855, 64856 are creation evidence specifically from the successful creation test run for APSS-TEST-BULK-004).*

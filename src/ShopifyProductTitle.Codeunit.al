@@ -17,12 +17,18 @@ codeunit 90300 "APSS Shopify Product Title"
 
     procedure GetBrandName(Item: Record Item): Text
     var
-        Manufacturer: Record Manufacturer;
+        ItemRecRef: RecordRef;
+        FldRef: FieldRef;
+        FieldRec: Record Field;
     begin
-        // Standalone default: Manufacturer represents the product brand.
-        // If APSS stores Brand in a custom Item field/table, replace this lookup.
-        if (Item."Manufacturer Code" <> '') and Manufacturer.Get(Item."Manufacturer Code") then
-            exit(Manufacturer.Name);
+        // Read the APSS Brand value dynamically from the Item record
+        ItemRecRef.GetTable(Item);
+        FieldRec.SetRange(TableNo, Database::Item);
+        FieldRec.SetFilter(FieldName, '%1|%2|%3|%4', 'Brand Code', 'Brand', 'Brand Name', 'APSS Brand*');
+        if FieldRec.FindFirst() then begin
+            FldRef := ItemRecRef.Field(FieldRec."No.");
+            exit(Format(FldRef.Value).Trim());
+        end;
 
         exit('');
     end;

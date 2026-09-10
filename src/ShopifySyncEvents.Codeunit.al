@@ -4,18 +4,6 @@ using Microsoft.Inventory.Item;
 
 codeunit 90302 "APSS Shopify Sync Events"
 {
-    // 1. IMAGE FILTERING — ADD ITEM FLOW
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnAfterCreateTempShopifyProduct', '', false, false)]
-    local procedure BlockAddProductWithoutImage(
-        Item: Record Item;
-        var ShopifyProduct: Record "Shpfy Product";
-        var ShopifyVariant: Record "Shpfy Variant";
-        var ShopifyTag: Record "Shpfy Tag"
-    )
-    begin
-        if Item.Picture.Count() = 0 then
-            ShopifyProduct.Title := '';
-    end;
 
     // 2. IMAGE FILTERING — SYNC PRODUCTS FLOW
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnAfterProductsToSynchronizeFiltersSet', '', false, false)]
