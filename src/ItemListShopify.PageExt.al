@@ -26,6 +26,7 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
     {
         addlast(Processing)
         {
+
             action("Refresh Selected Shopify Readiness")
             {
                 ApplicationArea = All;
