@@ -93,3 +93,80 @@ Verifies that items with a BC picture are successfully processed and added to Sh
   - **Log 64855**: `productVariantsBulkCreate`
   - **Log 64856**: `publishablePublish`
   *(Note: Log numbers 64854, 64855, 64856 are creation evidence specifically from the successful creation test run for APSS-TEST-BULK-004).*
+
+---
+
+### Test 3A / META-001 – Automatic Product Metafield Population
+
+Verifies the automatic product metafield population flow during new product creation (Add Items).
+
+- **Test Item**: `APSS-TEST-META-001`
+  - Description: Metafield Test Product
+  - APSS Brand: ALLEN-BRADLEY
+  - Vendor Item No.: AB-998877
+  - Lead Time Calculation: 10D
+  - Base Unit of Measure: EA
+  - Unit Price: 150.00
+  - Blocked: No
+  - Approved: Yes
+  - Picture: Yes
+- **Shop**: `APSS SHOP`
+
+**Test Flow**:
+Business Central → Shopify Products → Add Items
+
+**Add Items Settings**:
+- Shop Code: `APSS SHOP`
+- No.: `APSS-TEST-META-001`
+- Sync Images: ON
+- Sync Inventory: OFF
+
+**Runtime Evidence**:
+- **Shopify Log Entry**: `64918`
+- **Operation**: `metafieldsSet`
+- The metafield mutation was executed automatically after the Shopify Product was created.
+- Response contains `userErrors: []`.
+- Shopify Admin confirmed that the metafield values were populated automatically.
+
+**Metafields Verified**:
+
+| Metafield | BC Source | Shopify Value | Type | Result |
+| --- | --- | --- | --- | --- |
+| `custom.brand` | APSS Brand | ALLEN-BRADLEY | `single_line_text_field` | PASS |
+| `custom.manufacture_number` | Vendor Item No. | AB-998877 | `single_line_text_field` | PASS |
+| `custom.description` | Item Description | Metafield Test Product | `single_line_text_field` | PASS |
+| `custom.uom` | Base Unit of Measure | EA | `single_line_text_field` | PASS |
+| `custom.incoterms` | Fixed default | EXW | `single_line_text_field` | PASS |
+| `custom.lead_time` | Lead Time Calculation = 10D | 10 | `number_integer` | PASS |
+
+**Important Lead Time Behavior**:
+- BC stores Lead Time Calculation as `DateFormula`: `10D`.
+- The AL implementation converts the `DateFormula` to the calculated number of days.
+- Therefore `10D` in BC is sent to Shopify as integer value `10`.
+- Shopify metafield definition for `custom.lead_time` is `number_integer`.
+- Shopify accepted the mutation successfully.
+
+**Diagnostic / Log History Note**:
+- An earlier test run produced Shopify Log Entry `64908` with a type mismatch because `custom.lead_time` was sent as `single_line_text_field` while Shopify defined it as `number_integer`.
+- That issue was resolved by converting BC `10D` to integer `10` and sending `Enum::"Shpfy Metafield Type"::number_integer`.
+- Log `64908` was an intermediate finding; Log `64918` is recorded as the final passing runtime evidence.
+
+**Shopify Admin Verification**:
+- UOM = EA
+- INCOTERMS = EXW
+- Lead Time = 10
+- Manufacture Number = AB-998877
+- Brand = ALLEN-BRADLEY
+- Description = Metafield Test Product
+
+**Phase 2 / Blank Field Status**:
+- Datasheet / Product Specs: Phase 2
+- Price Valid Until: blank
+- Reference Number: blank
+
+**Proven Flow**:
+`BC Item` → `Product` → `Add Items` → `Shopify productCreate` → `Shpfy Product OnAfterInsertEvent` → `automatic metafield population` → `metafieldsSet` → `Shopify Product Metafields`
+
+**Final Result**:
+**PASS** – Automatic Product Metafield Population.
+
