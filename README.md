@@ -42,10 +42,10 @@ All Phase 1 functional requirements in the agreed scope are verified and PASS.
 
 The following items are explicitly excluded from Phase 1 and deferred to Phase 2 or pending business confirmation:
 
-- `custom.price_valid_until`: Deferred to Phase 2. (Kathy clarified that if applicable price records exist, the nearest/recently updated one should be considered, and an Ending Date in the past is not automatically invalid. No selection algorithm or source has been implemented in Phase 1.)
+- `custom.price_valid_until`: Phase 2. Business clarification has established that the applicable price record should be based on the nearest / most recently updated price, and an Ending Date in the past does not automatically exclude the record. The exact technical source-selection algorithm and runtime implementation remain Phase 2 work.
 - **Datasheet / Product Specs**: Deferred to Phase 2 due to standard Connector file upload limitations.
 - **Reference Number**: Deferred to Phase 2 pending business source specification. (Vendor Item No. is NOT assumed as the required reference source.)
-- **UOM Fallback Conversion / Price Overrides**: Any UOM fallback price calculation or master data modification is excluded from Phase 1 per Lead instructions. Business Central `Sales Unit of Measure` remains untouched.
+- **UOM Fallback Conversion / Price Overrides**: Any UOM fallback price calculation or master data modification is excluded from Phase 1 per confirmed business requirements. Business Central `Item."Sales Unit of Measure"` remains untouched.
 
 ---
 
@@ -152,7 +152,7 @@ All extension objects use assigned ID range `90300` to `90349`:
 ### Test 4 — Existing Product Synchronization (No-Image Gate)
 - **Target Product ID**: `16162981249327` | **BC Item**: `APSS-TEST-BULK-004` (Picture removed while BC ↔ Shopify mapping remained active).
 - **Procedure**: Execute **Synchronization** $\rightarrow$ **Products**.
-- **Expected Outcome**: Product filtered by `FilterProductsWithoutImageOnSync` (`ValidProductCount = 0`). Standard `UpdateProductData` skipped. Zero GraphQL update calls generated.
+- **Expected Outcome**: Product filtered by `FilterProductsWithoutImageOnSync` (`ValidProductCount = 0`). Standard `UpdateProductData` skipped. No target Shopify product update call was generated after the no-match filter was applied.
 
 ### UOM-002 — Base UOM vs Sales UOM
 - **Item**: `APSS-TEST-UOM-002` (`Base UOM = EA`, `Sales UOM = BOX`, `BOX = 10 EA`, Unit Price = `150.00`)
@@ -201,7 +201,7 @@ All extension objects use assigned ID range `90300` to `90349`:
 ### Test 4 Evidence
 - **Item**: `APSS-TEST-BULK-004` (Picture removed for test) / Shopify Product ID `16162981249327`
 - **Execution Result**: `FilterProductsWithoutImageOnSync` resolved product, evaluated `Item.Picture.Count() = 0`, set `ValidProductCount = 0`, and applied guaranteed no-match GUID filter `ShopifyProduct.SetRange("Item SystemId", CreateGuid())`.
-- **Runtime Metrics**: `ShopifyProduct.FindSet()` returned `false`. Zero GraphQL update calls (`productUpdate`, `productVariantsBulkCreate`, `metafieldsSet`) generated.
+- **Runtime Metrics**: `ShopifyProduct.FindSet()` returned `false`. No target Shopify product update call was generated after the no-match filter was applied.
 
 ### UOM-002 Evidence
 - **Item**: `APSS-TEST-UOM-002`
@@ -238,7 +238,7 @@ All extension objects use assigned ID range `90300` to `90349`:
    - The $150.00 \rightarrow 193.08$ price transformation is **NOT** claimed as a business-requirement PASS.
 4. **Business Central Master Data & Code Constraints**:
    - Business Central master data remains unchanged (`Sales Unit of Measure` is NOT modified to match `Base Unit of Measure`).
-   - No custom AL price override was implemented because standard Microsoft Shopify Connector price calculation must remain untouched per Lead instructions.
+   - No custom AL price override was implemented because standard Microsoft Shopify Connector price calculation must remain untouched per confirmed business rules.
 
 ---
 
@@ -249,7 +249,7 @@ All Phase 1 functional requirements in the agreed scope are verified and PASS.
 | Test ID | Item | Exact Operation | Expected Result | Actual Result | Shopify Log Entry IDs | GraphQL userErrors | Shopify Admin Result | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **TEST A (Image Gate Negative)** | `APSS-TEST-BULK-005` | Add Items report execution | `Picture.Count() = 0` item filtered at `OnBeforePreDataItem()`; product NOT created. | 0 products created, 0 mapping records inserted, 0 API calls. | None (Gated locally) | `[]` | No product created | **PASS** |
-| **TEST B (Image Positive Path)** | `APSS-TEST-BULK-004` | Add Items report execution | Item with picture passes gate, creates BC ↔ Shopify mapping without duplicates. | Product created (`16162981249327`), mapping valid. | `64854`, `64855`, `64856` | `[]` | Product created & active | **PASS** |
+| **TEST B (Image Positive Path)** | `APSS-TEST-BULK-004` | Add Items report execution | Item with a picture successfully passes the image gate and creates the Shopify Product and BC ↔ Shopify mapping. | Product created (`16162981249327`), mapping valid. | `64854`, `64855`, `64856` | `[]` | Product created & active | **PASS** |
 | **TEST C (Automatic Metafields)** | `APSS-TEST-META-001` / `APSS-TEST-UOM-002A` | Product creation metafield trigger | Populates 6 metafields (`brand`, `manufacture_number`, `description`, `uom`, `incoterms`, `lead_time`). | All 6 metafields populated automatically. | `64918` / `66482` | `[]` | 6 Metafields written | **PASS** |
 | **TEST D (UOM Mapping)** | `APSS-TEST-UOM-002A` | Product creation metafield trigger | `custom.uom` maps `Item."Base Unit of Measure"` (`EA`). | `custom.uom = EA` populated on Shopify Admin. | `66482` | `[]` | `custom.uom = EA` | **PASS** |
 | **TEST E (Readiness Validation)** | `APSSDANID0004` | Item List `Refresh Selected Readiness` | Evaluates readiness (`Has Image = Yes`, `Ready = No`, validation summary updated). | Fields updated on Item Card, Brand resolved (`ALLEN-BRADLEY`). | N/A (BC local action) | N/A | Readiness fields updated | **PASS** |
@@ -259,7 +259,7 @@ All Phase 1 functional requirements in the agreed scope are verified and PASS.
 
 ## 12. Known Limitations / Open Business Confirmations
 
-1. **UOM Price Scaling Alignment**: Standard Microsoft Shopify Connector natively computes product prices using `Item."Sales Unit of Measure"`, whereas `custom.uom` is mapped from `Item."Base Unit of Measure"`. Business confirmation from Kathy remains pending regarding whether Shopify always sells using Base UOM or supports Sales UOM fallbacks.
+1. **UOM Price Scaling Alignment**: `custom.uom` is mapped from `Item."Base Unit of Measure"` and has been runtime verified. Business Central `Item."Sales Unit of Measure"` is not modified for Shopify purposes. The standard Shopify Connector's price calculation behavior when Sales UOM differs from Base UOM remains subject to business-rule confirmation. No custom price override or UOM conversion is implemented in Phase 1.
 2. **Observed Price Multiplier**: In the test environment, BC Unit Price `150.00` yields Shopify variant price `193.08` (multiplier `1.2872`). The exact tenant pricing configuration causing this multiplier remains unproven without direct database setup inspection. Standard Connector price calculation remains untouched.
 3. **Phase 2 Scope Exclusions**: `custom.price_valid_until`, Datasheet/Product Specs, and Reference Number are excluded from Phase 1.
 
@@ -275,7 +275,7 @@ All Phase 1 functional requirements in the agreed scope are verified and PASS. N
 
 ## 14. Phase 2 Backlog
 
-- **`custom.price_valid_until`**: Implement nearest/recently updated price selection logic once business algorithm is finalized by Kathy.
+- **`custom.price_valid_until`**: Phase 2. Business clarification has established that the applicable price record should be based on the nearest / most recently updated price, and an Ending Date in the past does not automatically exclude the record. The exact technical source-selection algorithm and runtime implementation remain Phase 2 work.
 - **Datasheet / Product Specs**: Implement product specification document attachment mechanism once Shopify API / Connector file upload capabilities are established.
 - **Reference Number**: Implement reference number mapping once the authoritative business source field (e.g. Manufacturer Part No. or Vendor Item No.) is confirmed.
-- **UOM Business Fallback**: Implement custom UOM fallback/conversion logic if Kathy confirms a mandatory requirement to override standard Connector pricing behavior for multi-UOM items.
+- **UOM Business Fallback**: Implement custom UOM fallback/conversion logic if stakeholder confirmation establishes a mandatory requirement to override standard Connector pricing behavior for multi-UOM items.
