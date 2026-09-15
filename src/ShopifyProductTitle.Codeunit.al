@@ -1,3 +1,9 @@
+namespace Microsoft.Integration.Shopify;
+
+using Microsoft.Inventory.Item;
+using Microsoft.Inventory.Item.Catalog;
+using System.Reflection;
+
 codeunit 90300 "APSS Shopify Product Title"
 {
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", OnAfterFillInShopifyProductFields, '', false, false)]
@@ -35,10 +41,50 @@ codeunit 90300 "APSS Shopify Product Title"
 
     procedure GetProductNumber(Item: Record Item): Text
     begin
-        // Standalone default: Vendor Item No. represents the customer-facing part number.
-        // Replace this with the APSS Manufacturer Part No. field if required.
+        // Standard BC field used for product part number mapping.
+        // If a dedicated APSS Manufacturer Part No. field is confirmed, update here.
         exit(Item."Vendor Item No.");
     end;
+
+    procedure GetCustomerItemReference(Item: Record Item): Text
+    var
+        ItemReference: Record "Item Reference";
+    begin
+        if Item."No." = '' then
+            exit('');
+
+        ItemReference.SetRange("Item No.", Item."No.");
+        ItemReference.SetRange("Reference Type", Enum::"Item Reference Type"::Customer);
+        if ItemReference.FindFirst() then
+            exit(ItemReference."Reference No.");
+
+        exit('');
+    end;
+
+    procedure IsItemApproved(Item: Record Item): Boolean
+    var
+        ItemRecRef: RecordRef;
+        FldRef: FieldRef;
+        FieldRec: Record Field;
+    begin
+        if IsNullGuid(Item.SystemId) then
+            exit(false);
+
+        FieldRec.SetRange(TableNo, Database::Item);
+        FieldRec.SetRange(FieldName, 'APSS Approved');
+        FieldRec.SetRange(Type, FieldRec.Type::Boolean);
+        if not FieldRec.FindFirst() then
+            exit(false);
+
+        ItemRecRef.Open(Database::Item);
+        if ItemRecRef.Get(Item.RecordId) then begin
+            FldRef := ItemRecRef.Field(FieldRec."No.");
+            exit(FldRef.Value());
+        end;
+
+        exit(false);
+    end;
+
 
     local procedure JoinTitlePart(CurrentTitle: Text; NewPart: Text): Text
     begin

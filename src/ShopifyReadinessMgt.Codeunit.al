@@ -8,18 +8,16 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
     begin
         HasImage := Item.Picture.Count() > 0;
 
+        if not ProductTitleMgt.IsItemApproved(Item) then
+            AddMessage(MissingInformation, 'Item is not APSS Approved');
         if not HasImage then
             AddMessage(MissingInformation, 'Missing image');
         if ProductTitleMgt.GetBrandName(Item) = '' then
             AddMessage(MissingInformation, 'Missing brand');
-        if ProductTitleMgt.GetProductNumber(Item) = '' then
-            AddMessage(MissingInformation, 'Missing product number');
-        if Item.Description.Trim() = '' then
-            AddMessage(MissingInformation, 'Missing description');
-        if Item."Unit Price" <= 0 then
-            AddMessage(MissingInformation, 'Missing or invalid unit price');
-        if Item.Blocked then
-            AddMessage(MissingInformation, 'Item is blocked');
+        if ProductTitleMgt.GetCustomerItemReference(Item) = '' then
+            AddMessage(MissingInformation, 'Missing Customer Reference No.');
+        if Item."Base Unit of Measure" = '' then
+            AddMessage(MissingInformation, 'Missing Base Unit of Measure');
 
         Item."APSS Has Shopify Image" := HasImage;
         Item."APSS Shopify Ready" := MissingInformation = '';

@@ -7,15 +7,23 @@ reportextension 90300 "APSS Add Item Image Gate" extends "Shpfy Add Item to Shop
             trigger OnBeforePreDataItem()
             var
                 CandidateItem: Record Item;
+                ProductTitleCU: Codeunit "APSS Shopify Product Title";
                 FilterBuilder: TextBuilder;
+                IsEligible: Boolean;
             begin
                 // Copy the current Item filters applied to the report
                 CandidateItem.CopyFilters(Item);
 
-                // Evaluate candidate items and build a filter containing ONLY Item No. values where Picture.Count() > 0
+                // Evaluate candidate items: APSS Approved = true AND Picture.Count() > 0 AND Required Master Data
                 if CandidateItem.FindSet() then begin
                     repeat
-                        if CandidateItem.Picture.Count() > 0 then begin
+                        IsEligible := ProductTitleCU.IsItemApproved(CandidateItem) and
+                                      (CandidateItem.Picture.Count() > 0) and
+                                      (ProductTitleCU.GetCustomerItemReference(CandidateItem) <> '') and
+                                      (ProductTitleCU.GetBrandName(CandidateItem) <> '') and
+                                      (CandidateItem."Base Unit of Measure" <> '');
+
+                        if IsEligible then begin
                             if FilterBuilder.Length() > 0 then
                                 FilterBuilder.Append('|');
                             FilterBuilder.Append(CandidateItem."No.");

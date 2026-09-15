@@ -5,7 +5,7 @@ using Microsoft.Inventory.Item;
 codeunit 90302 "APSS Shopify Sync Events"
 {
 
-    // 2. IMAGE FILTERING — SYNC PRODUCTS FLOW
+    // 2. APPROVAL & IMAGE FILTERING — SYNC PRODUCTS FLOW
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnAfterProductsToSynchronizeFiltersSet', '', false, false)]
     local procedure FilterProductsWithoutImageOnSync(
         var ShopifyProduct: Record "Shpfy Product";
@@ -15,6 +15,7 @@ codeunit 90302 "APSS Shopify Sync Events"
     var
         ProductLoop: Record "Shpfy Product";
         Item: Record Item;
+        ProductTitleCU: Codeunit "APSS Shopify Product Title";
         FilterBuilder: TextBuilder;
         ValidProductCount: Integer;
     begin
@@ -23,7 +24,7 @@ codeunit 90302 "APSS Shopify Sync Events"
             repeat
                 if not IsNullGuid(ProductLoop."Item SystemId") then
                     if Item.GetBySystemId(ProductLoop."Item SystemId") then
-                        if Item.Picture.Count() > 0 then begin
+                        if ProductTitleCU.IsItemApproved(Item) and (Item.Picture.Count() > 0) then begin
                             if FilterBuilder.Length() > 0 then
                                 FilterBuilder.Append('|');
                             FilterBuilder.Append(Format(ProductLoop."Item SystemId", 0, 4));
@@ -34,7 +35,7 @@ codeunit 90302 "APSS Shopify Sync Events"
         if ValidProductCount > 0 then
             ShopifyProduct.SetFilter("Item SystemId", FilterBuilder.ToText())
         else
-            ShopifyProduct.SetRange("Item SystemId", CreateGuid()); // Block sync completely if no items have pictures
+            ShopifyProduct.SetRange("Item SystemId", CreateGuid()); // Block sync completely if no items pass approval and image gate
     end;
 
     // 3A. METAFIELD POPULATION FOR NEW PRODUCTS (ADD ITEMS FLOW)
@@ -79,7 +80,6 @@ codeunit 90302 "APSS Shopify Sync Events"
         Item: Record Item;
         ProductTitleCU: Codeunit "APSS Shopify Product Title";
         BrandName: Text;
-        VendorItemNo: Text;
         LeadTimeText: Text;
     begin
         if IsNullGuid(ShopifyProduct."Item SystemId") then
@@ -92,12 +92,8 @@ codeunit 90302 "APSS Shopify Sync Events"
         BrandName := ProductTitleCU.GetBrandName(Item);
         SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'brand', BrandName, Enum::"Shpfy Metafield Type"::single_line_text_field);
 
-        // manufacture_number
-        VendorItemNo := ProductTitleCU.GetProductNumber(Item);
-        SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'manufacture_number', VendorItemNo, Enum::"Shpfy Metafield Type"::single_line_text_field);
-
-        // description
-        SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'description', Item.Description, Enum::"Shpfy Metafield Type"::single_line_text_field);
+        // manufacture_number (Confirmed business mapping: Customer Item Reference No.)
+        SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'manufacture_number', ProductTitleCU.GetCustomerItemReference(Item), Enum::"Shpfy Metafield Type"::single_line_text_field);
 
         // uom
         SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'uom', Item."Base Unit of Measure", Enum::"Shpfy Metafield Type"::single_line_text_field);
