@@ -47,9 +47,17 @@ This document serves as the single authoritative, detailed technical and functio
 - **Rule:** `custom.uom` strictly maps `Item."Base Unit of Measure"`.
 - **Verification:** Tested Base UOM (`EA`) vs. Sales UOM (`BOX`). Verified that `custom.uom` receives `EA` without altering `Item."Sales Unit of Measure"` or corrupting pricing.
 
-### 3.5 Add Ready Items to Shopify Action Button
-- **Requirement:** Provide an explicit UI action on the Business Central Item List page allowing users to trigger export to Shopify for all items meeting both eligibility criteria: `APSS Has Shopify Image = true` AND `APSS Shopify Ready = true`.
-- **Implementation:** Added Action `Add Ready Items to Shopify` (`PageExtension 90300 "APSS Item List Shopify"`). Automatically refreshes readiness quietly (`RefreshAllItemsQuiet` in `Codeunit 90301`), filters items matching both checkboxes, and invokes `Report 30106 "Shpfy Add Item to Shopify"` pre-filtered with eligible items.
+### 3.5 Interactive Item Selection Modal & Instant Export Execution
+- **Requirement:** Provide an explicit UI action on the Business Central Item List page allowing users to inspect and select eligible candidate items (`New Ready` 🟢 or `Modified Ready` 🟡) via a dedicated selection modal before triggering Shopify synchronization.
+- **Selection Modal & Visual Checkbox (`Page 90300` & `Table 90300`):**
+  - Displays a modal list (`APSS Shopify Item Selection`) bound to temporary buffer table `APSS Shpfy Item Sel. Buffer`.
+  - Field `Selected` (`Boolean`) renders as a visual Checkbox (`[ ]` / `[✓]`) for intuitive line-by-line selection.
+  - Actions `Select All` and `Deselect All` for batch selection control.
+- **Instant Targeted Sync & UI Refresh:**
+  - **New Ready Items:** Programmatically executed via `Report 30106 "Shpfy Add Item to Shopify"` filtered strictly by selected item numbers (`"No." = 'ITEM1'|'ITEM2'`), with `ReqWindow` set to `false` (no popup dialogs).
+  - **Modified Ready Items:** Executed via `Report 30108 "Shpfy Sync Products"` with a targeted `SystemId` filter set via `APSS Shopify Sync Events` (`OnAfterProductsToSynchronizeFiltersSet`). This restricts `Shpfy Product Export` (`Codeunit 30178`) strictly to the user-selected items, executing `productUpdate` GraphQL mutation and updating Shopify Admin in < 1 second without scanning the full catalog.
+  - **Automatic UI Status Transition:** Calls `CurrPage.Update(false)` after sync, instantly updating item sync status badges to **`Synced Unchanged`** (green/subordinate style).
+  - **User Feedback:** Displays post-sync summary message (e.g. `1 new item(s) and 1 modified item(s) were processed for Shopify sync.`).
 
 ### 3.6 Datasheet / Product Specs (Deferred)
 - **Status:** **DEFERRED / OUT OF CURRENT SCOPE**
@@ -59,20 +67,23 @@ This document serves as the single authoritative, detailed technical and functio
 
 ## 4. Current Production Implementation
 
-The Phase 2 extension is implemented across 10 AL source files under `src/`:
+The Phase 2 extension is implemented across 13 AL source files under `src/`:
 
 | File Path | Object Type & ID | Object Name | Primary Responsibility |
 | :--- | :--- | :--- | :--- |
 | [`src/APSSItemPriceEndingDate.Table.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSItemPriceEndingDate.Table.al) | `Table 90306` | `APSS Item Price Ending Date` | Persistent staging DB storing captured ending dates per Item & Shop |
 | [`src/APSSDiagnosticLog.Table.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSDiagnosticLog.Table.al) | `Table 90305` | `APSS Diagnostic Log` | Operational diagnostic logging table |
 | [`src/APSSDiagnosticLogs.Page.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSDiagnosticLogs.Page.al) | `Page 90305` | `APSS Diagnostic Logs` | Admin page UI for inspecting diagnostic logs |
+| [`src/APSSShpfyItemSelBuffer.Table.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSShpfyItemSelBuffer.Table.al) | `Table 90300` | `APSS Shpfy Item Sel. Buffer` | Temporary buffer table for modal selection page with visual checkbox |
+| [`src/ShopifyItemSelection.Page.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyItemSelection.Page.al) | `Page 90300` | `APSS Shopify Item Selection` | Modal selection page for selecting candidate items before Shopify sync |
+| [`src/ShopifyItemSyncStatus.Enum.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyItemSyncStatus.Enum.al) | `Enum 90300` | `APSS Shopify Item Sync Status` | Sync status enum (`Not Ready`, `New Ready`, `Modified Ready`, `Synced Unchanged`) |
 | [`src/ShopifySyncEvents.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifySyncEvents.Codeunit.al) | `Codeunit 90302` | `APSS Shopify Sync Events` | Pricing override, Legacy & New pricing subscribers, Staging DB & Metafields sync |
 | [`src/ShopifyProductTitle.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyProductTitle.Codeunit.al) | `Codeunit 90300` | `APSS Shopify Product Title` | Product title formatting, APSS Approved check, Customer Reference lookup |
-| [`src/ShopifyReadinessMgt.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyReadinessMgt.Codeunit.al) | `Codeunit 90301` | `APSS Shopify Readiness Mgt.` | Evaluates item readiness status |
+| [`src/ShopifyReadinessMgt.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyReadinessMgt.Codeunit.al) | `Codeunit 90301` | `APSS Shopify Readiness Mgt.` | Evaluates item readiness status and sync state |
 | [`src/AddItemImageGate.ReportExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/AddItemImageGate.ReportExt.al) | `ReportExtension 90300` | `APSS Add Item Image Gate` | Image & Approval Gate for Add Items report |
 | [`src/ItemShopifyReady.TableExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemShopifyReady.TableExt.al) | `TableExtension 90300` | `APSS Item Shopify Ready` | Readiness fields on Item table |
-| [`src/ItemListShopify.PageExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemListShopify.PageExt.al) | `PageExtension 90300` | `APSS Item List Shopify` | Readiness fields and refresh actions on Item List page |
-| [`src/ShopifyEnhancements.PermissionSet.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyEnhancements.PermissionSet.al) | `PermissionSet 90300` | `APSS SHOPIFY ENH` | Permission set granting RIMD permissions for staging & log tables |
+| [`src/ItemListShopify.PageExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemListShopify.PageExt.al) | `PageExtension 90300` | `APSS Item List Shopify` | Readiness fields, status styles, and Add Ready Items action on Item List |
+| [`src/ShopifyEnhancements.PermissionSet.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyEnhancements.PermissionSet.al) | `PermissionSet 90300` | `APSS SHOPIFY ENH` | Permission set granting RIMD permissions for staging, buffer & log tables |
 
 ---
 
