@@ -37,8 +37,7 @@ The primary purpose of this extension is to extend standard Business Central and
   - **Legacy Pricing:** `Codeunit 7000 "Sales Price Calc. Mgt."` (event `OnAfterCalcBestUnitPrice`).
   - **New Pricing:** `Codeunit 7020 "Sales Line - Price"` (event `OnAfterSetPrice`).
 - **Persistent Staging Architecture (`Table 90306 APSS Item Price Ending Date`):** Resolves NST background session boundary risks (where in-memory dictionaries fail across async job queues). Stores `Item No.`, `Shop Code`, `Ending Date`, `Has Variant Conflict`, `Last Updated`, and `Last Session ID`. Automatically purges stale staging data per `Shop Code` at the start of each sync pass.
-- **Product Price Ending Date Metafield (`custom.price_valid_until`):** Synchronizes captured ending dates to Shopify Metafield in ISO `date` format (`YYYY-MM-DD`, e.g., `2026-09-30`). Omitted when variant ending date conflicts occur (`Has Variant Conflict = true`).
-- **Admin Diagnostic Logging (`Table 90305` & `Page 90305 APSS Diagnostic Logs`):** Retains operational diagnostic logs (`Session ID`, `Context`, `Item No.`, `Shop Code`, `Calculated Price`, `Captured Ending Date`, `Error Text`, `Details`) with an Admin UI page for long-term production maintenance.
+- **Interactive Item Selection Modal & Instant Sync:** Dedicated UI Action button on the Item List page (`Add Ready Items to Shopify`) that opens a selection modal page (`Page 90300 APSS Shopify Item Selection`) with visual Checkbox controls (`[ ]` / `[✓]`) and `Select All` / `Deselect All` actions. Automatically segregates selected items into `New Ready` (runs `Report 30106`) and `Modified Ready` (runs `Report 30108` with a targeted `SystemId` filter), executing instant sync (< 1 second) and automatically transitioning status badges to `Synced Unchanged`.
 
 ---
 
@@ -47,16 +46,17 @@ The primary purpose of this extension is to extend standard Business Central and
 ```
 Business Central Item
         │
-        ├─► Add Items (Report 30106) ─────────► APSS Approved & Image Gate ──► Shopify Product Creation
-        │
-        ├─► Existing Product Sync (Codeunit 30178) ─► APSS Approved & Image Gate ──► Shopify Product Update
+        ├─► Add Ready Items Modal (Page 90300) ──► Visual Checkbox & Selection ──► Targeted Export (< 1s)
+        │                                                                               │
+        │                                                                               ├─► New Ready ──────► Report 30106 Creation
+        │                                                                               └─► Modified Ready ─► Report 30108 Sync (Targeted SystemId Filter < 1s)
         │
         ├─► Pricing Engine Override ──────────► Temp Quote (Qty = 1.0) ─────► Captured Unit Price ($158.902 SGD)
         │                                             │
         │                                             ├─► Legacy Pricing (CU 7000) ──┐
         │                                             └─► New Pricing (CU 7020) ────┴─► APSS Item Price Ending Date (Table 90306)
         │
-        ├─► Readiness Management (Codeunit 90301) ──► Item List Page UI Updates
+        ├─► Readiness Management (Codeunit 90301) ──► Item List Page UI Updates & Auto Status Transition
         │
         └─► Product Metafield Sync (Codeunit 90302) ─► GraphQL metafieldsSet ──────► Shopify Admin Product Metafields
                                                             ├─► custom.brand
@@ -83,11 +83,14 @@ APSS_Shopify/
 │   ├── APSSDiagnosticLog.Table.al          # Operational diagnostic logging table (Table 90305)
 │   ├── APSSDiagnosticLogs.Page.al          # Admin diagnostic logs UI page (Page 90305)
 │   ├── APSSItemPriceEndingDate.Table.al    # Persistent staging table for captured ending dates (Table 90306)
-│   ├── ItemListShopify.PageExt.al          # Readiness fields and refresh actions on Item List (PageExt 90300)
+│   ├── APSSShpfyItemSelBuffer.Table.al     # Temporary buffer table for selection page with checkbox (Table 90300)
+│   ├── ItemListShopify.PageExt.al          # Readiness fields, status styles, and Add Ready Items action (PageExt 90300)
 │   ├── ItemShopifyReady.TableExt.al        # Custom readiness fields on Item table (TableExt 90300)
 │   ├── ShopifyEnhancements.PermissionSet.al # Extension permissions (PermissionSet 90300)
+│   ├── ShopifyItemSelection.Page.al        # Selection modal page with visual checkbox (Page 90300)
+│   ├── ShopifyItemSyncStatus.Enum.al       # Sync status enum definition (Enum 90300)
 │   ├── ShopifyProductTitle.Codeunit.al      # Product title formatting & Customer Reference lookup (Codeunit 90300)
-│   ├── ShopifyReadinessMgt.Codeunit.al      # Readiness validation logic (Codeunit 90301)
+│   ├── ShopifyReadinessMgt.Codeunit.al      # Readiness & sync status evaluation (Codeunit 90301)
 │   └── ShopifySyncEvents.Codeunit.al        # Pricing override, event subscribers & metafield sync (Codeunit 90302)
 ├── app.json                                # AL Extension manifest
 └── README.md                               # Main GitHub repository README

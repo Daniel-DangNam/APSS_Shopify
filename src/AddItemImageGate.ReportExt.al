@@ -26,7 +26,7 @@ reportextension 90300 "APSS Add Item Image Gate" extends "Shpfy Add Item to Shop
                         if IsEligible then begin
                             if FilterBuilder.Length() > 0 then
                                 FilterBuilder.Append('|');
-                            FilterBuilder.Append(CandidateItem."No.");
+                            FilterBuilder.Append('''' + CandidateItem."No." + '''');
                         end;
                     until CandidateItem.Next() = 0;
                 end;

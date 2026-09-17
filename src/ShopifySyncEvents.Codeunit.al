@@ -17,6 +17,17 @@ codeunit 90302 "APSS Shopify Sync Events"
         CurrentCalcVariantCode: Code[20];
         CurrentCalcEndingDate: Date;
         CurrentCalcBestUnitPrice: Decimal;
+        SelectedModifiedItemFilter: Text;
+
+    procedure SetSelectedModifiedItemFilter(SystemIdsFilter: Text)
+    begin
+        SelectedModifiedItemFilter := SystemIdsFilter;
+    end;
+
+    procedure ClearSelectedModifiedItemFilter()
+    begin
+        SelectedModifiedItemFilter := '';
+    end;
 
     local procedure LogDiag(
         Context: Text[100];
@@ -75,6 +86,9 @@ codeunit 90302 "APSS Shopify Sync Events"
             StagingRec.DeleteAll();
 
         LogDiag('FilterProducts:Start', '', Shop.Code, true, false, 0, 0D, '', StrSubstNo('SyncPrices=%1, ProductMetafieldsToShopify=%2, SessionId=%3', Shop."Sync Prices", Shop."Product Metafields To Shopify", SessionId()));
+
+        if SelectedModifiedItemFilter <> '' then
+            ShopifyProduct.SetFilter("Item SystemId", SelectedModifiedItemFilter);
 
         ProductLoop.CopyFilters(ShopifyProduct);
         if ProductLoop.FindSet() then
