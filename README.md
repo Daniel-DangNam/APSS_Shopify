@@ -38,6 +38,7 @@ The primary purpose of this extension is to extend standard Business Central and
   - **New Pricing:** `Codeunit 7020 "Sales Line - Price"` (event `OnAfterSetPrice`).
 - **Persistent Staging Architecture (`Table 90306 APSS Item Price Ending Date`):** Resolves NST background session boundary risks (where in-memory dictionaries fail across async job queues). Stores `Item No.`, `Shop Code`, `Ending Date`, `Has Variant Conflict`, `Last Updated`, and `Last Session ID`. Automatically purges stale staging data per `Shop Code` at the start of each sync pass.
 - **Product Price Ending Date Metafield (`custom.price_valid_until`):** Synchronizes captured ending dates to Shopify Metafield in ISO `date` format (`YYYY-MM-DD`, e.g., `2026-09-30`). Omitted when variant ending date conflicts occur (`Has Variant Conflict = true`).
+- **Add Ready Items to Shopify Action:** Dedicated UI Action button on the Item List page (`Add Ready Items to Shopify`) that automatically filters items having both `APSS Has Shopify Image = true` AND `APSS Shopify Ready = true`, opening standard Shopify Add Item report (`Report 30106`) pre-filtered with eligible items.
 - **Admin Diagnostic Logging (`Table 90305` & `Page 90305 APSS Diagnostic Logs`):** Retains operational diagnostic logs (`Session ID`, `Context`, `Item No.`, `Shop Code`, `Calculated Price`, `Captured Ending Date`, `Error Text`, `Details`) with an Admin UI page for long-term production maintenance.
 
 ---

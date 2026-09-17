@@ -47,7 +47,11 @@ This document serves as the single authoritative, detailed technical and functio
 - **Rule:** `custom.uom` strictly maps `Item."Base Unit of Measure"`.
 - **Verification:** Tested Base UOM (`EA`) vs. Sales UOM (`BOX`). Verified that `custom.uom` receives `EA` without altering `Item."Sales Unit of Measure"` or corrupting pricing.
 
-### 3.5 Datasheet / Product Specs (Deferred)
+### 3.5 Add Ready Items to Shopify Action Button
+- **Requirement:** Provide an explicit UI action on the Business Central Item List page allowing users to trigger export to Shopify for all items meeting both eligibility criteria: `APSS Has Shopify Image = true` AND `APSS Shopify Ready = true`.
+- **Implementation:** Added Action `Add Ready Items to Shopify` (`PageExtension 90300 "APSS Item List Shopify"`). Automatically refreshes readiness quietly (`RefreshAllItemsQuiet` in `Codeunit 90301`), filters items matching both checkboxes, and invokes `Report 30106 "Shpfy Add Item to Shopify"` pre-filtered with eligible items.
+
+### 3.6 Datasheet / Product Specs (Deferred)
 - **Status:** **DEFERRED / OUT OF CURRENT SCOPE**
 - **Reason:** Business Central document attachments are internal BLOBs requiring authentication. Public URL generation and file hosting strategy (Shopify Files API vs Cloud Storage) require business/tech lead approval.
 

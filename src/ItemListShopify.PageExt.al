@@ -59,6 +59,33 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     CurrPage.Update(false);
                 end;
             }
+            action("Add Ready Items to Shopify")
+            {
+                ApplicationArea = All;
+                Caption = 'Add Ready Items to Shopify';
+                Image = Export;
+                Promoted = true;
+                PromotedCategory = Process;
+                ToolTip = 'Exports all items that have both Has Shopify Image = True and Shopify Ready = True to Shopify.';
+
+                trigger OnAction()
+                var
+                    ReadyItem: Record Item;
+                    ShopifyReadinessMgt: Codeunit "APSS Shopify Readiness Mgt.";
+                begin
+                    ShopifyReadinessMgt.RefreshAllItemsQuiet();
+
+                    ReadyItem.SetRange("APSS Has Shopify Image", true);
+                    ReadyItem.SetRange("APSS Shopify Ready", true);
+
+                    if ReadyItem.IsEmpty() then begin
+                        Message('No items meet both Has Shopify Image and Shopify Ready criteria.');
+                        exit;
+                    end;
+
+                    Report.Run(Report::"Shpfy Add Item to Shopify", true, false, ReadyItem);
+                end;
+            }
         }
     }
 }

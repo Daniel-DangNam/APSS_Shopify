@@ -39,6 +39,16 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
         Message('%1 items were checked for Shopify readiness.', UpdatedCount);
     end;
 
+    procedure RefreshAllItemsQuiet()
+    var
+        Item: Record Item;
+    begin
+        if Item.FindSet(true) then
+            repeat
+                RefreshItem(Item);
+            until Item.Next() = 0;
+    end;
+
     procedure RefreshSelectedItems(var SelectedItem: Record Item)
     var
         UpdatedCount: Integer;
