@@ -2,7 +2,7 @@
   "id": "6bc2d1a6-7ceb-4f94-a665-a12c753d284b",
   "name": "APSS Shopify Enhancements",
   "publisher": "APSS",
-  "version": "1.0.0.0",
+  "version": "1.0.0.1",
   "brief": "Shopify title formatting and item readiness controls for APSS.",
   "description": "Builds consistent Shopify product titles and identifies Business Central items that are ready to export.",
   "privacyStatement": "",
