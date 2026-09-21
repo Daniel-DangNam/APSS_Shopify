@@ -80,25 +80,23 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     CandidateItem: Record Item;
                     ReadyItem: Record Item temporary;
                     SelectedItem: Record Item temporary;
-                    FilterItem: Record Item;
+                    FilterNewItem: Record Item;
                     ShopifyShop: Record "Shpfy Shop";
                     ShpfyProduct: Record "Shpfy Product";
                     ShopifyReadinessMgt: Codeunit "APSS Shopify Readiness Mgt.";
                     SyncEvents: Codeunit "APSS Shopify Sync Events";
                     ItemSelectionPage: Page "APSS Shopify Item Selection";
                     Status: Enum "APSS Shopify Item Sync Status";
-                    FilterBuilder: TextBuilder;
+                    NewFilterBuilder: TextBuilder;
                     ModifiedFilterBuilder: TextBuilder;
                     ParametersXml: Text;
                     ValidCount: Integer;
                     NewCount: Integer;
                     ModifiedCount: Integer;
-                    ReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Add Item to Shopify" id="30106"><Options><Field name="ShopCode">%1</Field><Field name="SyncImages">true</Field><Field name="SyncInventory">false</Field></Options><DataItems><DataItem name="Item">%2</DataItem></DataItems></ReportParameters>', Locked = true;
+                    ReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Add Item to Shopify" id="30106"><Options><Field name="ShopCode">%1</Field><Field name="SyncImages">true</Field><Field name="SyncInventory">true</Field></Options><DataItems><DataItem name="Item">%2</DataItem></DataItems></ReportParameters>', Locked = true;
                     SyncProductsReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Sync Products" id="30108"><Options><Field name="OnlySyncPrices">false</Field></Options><DataItems><DataItem name="Shop">VERSION(1) SORTING(Code) WHERE(Code=1(%1))</DataItem></DataItems></ReportParameters>', Locked = true;
                 begin
-                    CandidateItem.SetRange("APSS Has Shopify Image", true);
-                    CandidateItem.SetRange("APSS Shopify Ready", true);
-
+                    CandidateItem.Reset();
                     ReadyItem.Reset();
                     ReadyItem.DeleteAll();
 
@@ -126,62 +124,40 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                         if SelectedItem.FindSet() then begin
                             NewCount := 0;
                             ModifiedCount := 0;
-                            Clear(FilterBuilder);
+                            Clear(NewFilterBuilder);
+                            Clear(ModifiedFilterBuilder);
                             repeat
                                 Status := ShopifyReadinessMgt.GetItemSyncStatus(SelectedItem);
-                                if Status = Enum::"APSS Shopify Item Sync Status"::"New Ready" then
-                                    NewCount += 1
-                                else if Status = Enum::"APSS Shopify Item Sync Status"::"Modified Ready" then
+                                if Status = Enum::"APSS Shopify Item Sync Status"::"New Ready" then begin
+                                    NewCount += 1;
+                                    if NewFilterBuilder.Length() > 0 then
+                                        NewFilterBuilder.Append('|');
+                                    NewFilterBuilder.Append('''' + SelectedItem."No." + '''');
+                                end else if Status = Enum::"APSS Shopify Item Sync Status"::"Modified Ready" then begin
                                     ModifiedCount += 1;
-
-                                if FilterBuilder.Length() > 0 then
-                                    FilterBuilder.Append('|');
-                                FilterBuilder.Append('''' + SelectedItem."No." + '''');
+                                    if ModifiedFilterBuilder.Length() > 0 then
+                                        ModifiedFilterBuilder.Append('|');
+                                    ModifiedFilterBuilder.Append(Format(SelectedItem.SystemId, 0, 4));
+                                end;
                             until SelectedItem.Next() = 0;
 
-                            if FilterBuilder.Length() > 0 then begin
+                            if (NewCount > 0) or (ModifiedCount > 0) then begin
                                 if not ShopifyShop.FindFirst() then
                                     Error('No Shopify Shop found. Please configure a Shopify Shop first.');
 
-                                FilterItem.SetFilter("No.", FilterBuilder.ToText());
-
+                                // 1. Process New Ready Items through Add Item Report
                                 if NewCount > 0 then begin
-                                    ParametersXml := StrSubstNo(ReportParametersTxt, ShopifyShop.Code, FilterItem.GetView(false));
+                                    FilterNewItem.SetFilter("No.", NewFilterBuilder.ToText());
+                                    ParametersXml := StrSubstNo(ReportParametersTxt, ShopifyShop.Code, FilterNewItem.GetView(false));
                                     Report.Execute(Report::"Shpfy Add Item to Shopify", ParametersXml);
                                 end;
 
+                                // 2. Process Modified Ready Items through Sync Products Report with targeted SystemId filter
                                 if ModifiedCount > 0 then begin
-                                    Clear(ModifiedFilterBuilder);
-                                    SelectedItem.Reset();
-                                    if SelectedItem.FindSet() then
-                                        repeat
-                                            Status := ShopifyReadinessMgt.GetItemSyncStatus(SelectedItem);
-                                            if Status = Enum::"APSS Shopify Item Sync Status"::"Modified Ready" then begin
-                                                if ModifiedFilterBuilder.Length() > 0 then
-                                                    ModifiedFilterBuilder.Append('|');
-                                                ModifiedFilterBuilder.Append(Format(SelectedItem.SystemId, 0, 4));
-                                            end;
-                                        until SelectedItem.Next() = 0;
-
-                                    if ModifiedFilterBuilder.Length() > 0 then begin
-                                        SyncEvents.SetSelectedModifiedItemFilter(ModifiedFilterBuilder.ToText());
-                                        ParametersXml := StrSubstNo(SyncProductsReportParametersTxt, ShopifyShop.Code);
-                                        Report.Execute(Report::"Shpfy Sync Products", ParametersXml);
-                                        SyncEvents.ClearSelectedModifiedItemFilter();
-                                    end;
-
-                                    SelectedItem.Reset();
-                                    if SelectedItem.FindSet() then
-                                        repeat
-                                            Status := ShopifyReadinessMgt.GetItemSyncStatus(SelectedItem);
-                                            if Status = Enum::"APSS Shopify Item Sync Status"::"Modified Ready" then begin
-                                                ShpfyProduct.SetRange("Item SystemId", SelectedItem.SystemId);
-                                                if ShpfyProduct.FindFirst() then begin
-                                                    ShpfyProduct."Last Updated by BC" := CurrentDateTime;
-                                                    ShpfyProduct.Modify(true);
-                                                end;
-                                            end;
-                                        until SelectedItem.Next() = 0;
+                                    SyncEvents.SetSelectedModifiedItemFilter(ModifiedFilterBuilder.ToText());
+                                    ParametersXml := StrSubstNo(SyncProductsReportParametersTxt, ShopifyShop.Code);
+                                    Report.Execute(Report::"Shpfy Sync Products", ParametersXml);
+                                    SyncEvents.ClearSelectedModifiedItemFilter();
                                 end;
 
                                 CurrPage.Update(false);

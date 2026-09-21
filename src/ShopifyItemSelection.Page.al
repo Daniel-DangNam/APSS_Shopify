@@ -103,9 +103,9 @@ page 90300 "APSS Shopify Item Selection"
                 Rec."Item No." := InItem."No.";
                 Rec.Selected := true;
                 Rec.Description := InItem.Description;
+                Rec."Sync Status" := ShopifyReadinessMgt.GetItemSyncStatus(InItem);
                 Rec."Has Shopify Image" := InItem."APSS Has Shopify Image";
                 Rec."Shopify Ready" := InItem."APSS Shopify Ready";
-                Rec."Sync Status" := ShopifyReadinessMgt.GetItemSyncStatus(InItem);
                 Rec."Sync Status Style" := ShopifyReadinessMgt.GetSyncStatusStyle(InItem);
                 Rec.Insert();
             until InItem.Next() = 0;
