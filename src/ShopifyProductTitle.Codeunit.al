@@ -10,10 +10,28 @@ codeunit 90300 "APSS Shopify Product Title"
     local procedure SetShopifyProductTitle(Item: Record Item; var ShopifyProduct: Record "Shpfy Product")
     var
         ShopifyTitle: Text;
+        Brand: Text;
+        Desc: Text;
+        BrandUpper: Text;
+        DescUpper: Text;
     begin
-        ShopifyTitle := JoinTitlePart(ShopifyTitle, GetBrandName(Item));
-        ShopifyTitle := JoinTitlePart(ShopifyTitle, GetProductNumber(Item));
-        ShopifyTitle := JoinTitlePart(ShopifyTitle, Item.Description);
+        Brand := GetBrandName(Item);
+        Desc := Item.Description.Trim();
+
+        if Brand = '' then
+            ShopifyTitle := Desc
+        else if Desc = '' then
+            ShopifyTitle := Brand
+        else begin
+            BrandUpper := Brand.ToUpper();
+            DescUpper := Desc.ToUpper();
+            if (DescUpper = BrandUpper) or
+               ((StrLen(DescUpper) > StrLen(BrandUpper)) and (CopyStr(DescUpper, 1, StrLen(BrandUpper) + 1) = (BrandUpper + ' ')))
+            then
+                ShopifyTitle := Desc
+            else
+                ShopifyTitle := Brand + ' ' + Desc;
+        end;
 
         ShopifyProduct.Title := CopyStr(ShopifyTitle, 1, MaxStrLen(ShopifyProduct.Title));
 
@@ -30,7 +48,12 @@ codeunit 90300 "APSS Shopify Product Title"
         // Read the APSS Brand value dynamically from the Item record
         ItemRecRef.GetTable(Item);
         FieldRec.SetRange(TableNo, Database::Item);
-        FieldRec.SetFilter(FieldName, '%1|%2|%3|%4', 'Brand Code', 'Brand', 'Brand Name', 'APSS Brand*');
+        FieldRec.SetRange(FieldName, 'APSS Brand');
+        if not FieldRec.FindFirst() then begin
+            FieldRec.SetRange(FieldName, 'Brand Code');
+            if not FieldRec.FindFirst() then
+                FieldRec.SetRange(FieldName, 'Brand');
+        end;
         if FieldRec.FindFirst() then begin
             FldRef := ItemRecRef.Field(FieldRec."No.");
             exit(Format(FldRef.Value).Trim());
@@ -73,16 +96,21 @@ codeunit 90300 "APSS Shopify Product Title"
         FieldRec.SetRange(TableNo, Database::Item);
         FieldRec.SetRange(FieldName, 'APSS Approved');
         FieldRec.SetRange(Type, FieldRec.Type::Boolean);
-        if not FieldRec.FindFirst() then
-            exit(false);
-
-        ItemRecRef.Open(Database::Item);
-        if ItemRecRef.Get(Item.RecordId) then begin
-            FldRef := ItemRecRef.Field(FieldRec."No.");
-            exit(FldRef.Value());
+        if not FieldRec.FindFirst() then begin
+            FieldRec.SetRange(FieldName, 'Approved');
+            if not FieldRec.FindFirst() then
+                FieldRec.SetRange(FieldName, 'APSS Shopify Approved');
         end;
 
-        exit(false);
+        if FieldRec.FindFirst() then begin
+            ItemRecRef.Open(Database::Item);
+            if ItemRecRef.Get(Item.RecordId) then begin
+                FldRef := ItemRecRef.Field(FieldRec."No.");
+                exit(FldRef.Value());
+            end;
+        end;
+
+        exit(true);
     end;
 
 

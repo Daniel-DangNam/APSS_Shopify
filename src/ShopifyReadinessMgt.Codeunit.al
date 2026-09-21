@@ -1,6 +1,6 @@
 codeunit 90301 "APSS Shopify Readiness Mgt."
 {
-    procedure RefreshItem(var Item: Record Item)
+    procedure EvaluateItemReadiness(var Item: Record Item)
     var
         ProductTitleMgt: Codeunit "APSS Shopify Product Title";
         MissingInformation: Text[250];
@@ -14,14 +14,19 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
             AddMessage(MissingInformation, 'Missing image');
         if ProductTitleMgt.GetBrandName(Item) = '' then
             AddMessage(MissingInformation, 'Missing brand');
-        if ProductTitleMgt.GetCustomerItemReference(Item) = '' then
-            AddMessage(MissingInformation, 'Missing Customer Reference No.');
+        if Item.Description.Trim() = '' then
+            AddMessage(MissingInformation, 'Missing Description');
         if Item."Base Unit of Measure" = '' then
             AddMessage(MissingInformation, 'Missing Base Unit of Measure');
 
         Item."APSS Has Shopify Image" := HasImage;
         Item."APSS Shopify Ready" := MissingInformation = '';
         Item."APSS Shopify Validation" := MissingInformation;
+    end;
+
+    procedure RefreshItem(var Item: Record Item)
+    begin
+        EvaluateItemReadiness(Item);
         Item.Modify(false);
     end;
 
@@ -62,14 +67,24 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
         Message('%1 selected item(s) were checked for Shopify readiness.', UpdatedCount);
     end;
 
-    procedure GetItemSyncStatus(Item: Record Item): Enum "APSS Shopify Item Sync Status"
+    procedure IsItemReady(var Item: Record Item): Boolean
+    begin
+        EvaluateItemReadiness(Item);
+        exit(Item."APSS Shopify Ready");
+    end;
+
+    procedure GetItemSyncStatus(var Item: Record Item): Enum "APSS Shopify Item Sync Status"
     var
         ShpfyProduct: Record "Shpfy Product";
+        ShopifyShop: Record "Shpfy Shop";
     begin
-        if not (Item."APSS Has Shopify Image" and Item."APSS Shopify Ready") then
+        if not IsItemReady(Item) then
             exit(Enum::"APSS Shopify Item Sync Status"::"Not Ready");
 
         ShpfyProduct.SetRange("Item SystemId", Item.SystemId);
+        if ShopifyShop.FindFirst() then
+            ShpfyProduct.SetRange("Shop Code", ShopifyShop.Code);
+
         if not ShpfyProduct.FindFirst() then
             exit(Enum::"APSS Shopify Item Sync Status"::"New Ready");
 

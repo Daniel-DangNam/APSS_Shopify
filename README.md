@@ -22,22 +22,26 @@ The primary purpose of this extension is to extend standard Business Central and
 ### Phase 1: Publishing Controls & Product Metafields
 - **APSS Approved Gate:** Items where `APSS Approved = false` (Field 50001, Boolean) are strictly excluded from both Add Items (new product creation) and Sync Products (existing product updates).
 - **Image Gate:** Items must have at least one image (`Picture.Count() > 0`). Missing images filter items out silently without creating error log noise.
-- **Shopify Readiness Validation:** Dynamic calculation on Item records (`APSS Has Shopify Image`, `APSS Shopify Ready`, `APSS Shopify Validation`) evaluating `APSS Approved`, `Picture`, `Customer Item Reference No.`, `Brand`, and `Base Unit of Measure`. Includes UI refresh actions on the Item List page.
-- **Product Title Formatting:** Formatted as `[Brand] - [Vendor Item No.] - [Description]` using dynamic `RecordRef`/`FieldRef` field lookup for `APSS Brand`.
-- **Custom Metafield Sync:** Automatically synchronizes 5 core product metafields to Shopify Admin:
-  1. `custom.brand`: Dynamic lookup for `APSS Brand` field data from Item.
-  2. `custom.manufacture_number`: Mapped from `Item Reference."Reference No."` where `Reference Type = Customer`.
+- **Shopify Readiness Validation:** Evaluates hard readiness: `APSS Approved`, `Picture`, `Brand`, `Description`, and `Base Unit of Measure`. Customer Item Reference is strictly excluded from hard readiness.
+- **Product Title Formatting:** Deterministic fallback format `Brand + Description` with anti-duplication (e.g. if Description already starts with Brand, Brand is not prepended twice). Excludes Vendor Item No. and Customer Reference.
+- **Custom Metafield Sync:** Automatically synchronizes core product and variant metafields to Shopify Admin:
+  1. `custom.brand`: Dynamic lookup for exact `APSS Brand` field data from Item.
+  2. `custom.manufacture_number`: Mapped from `Item.Description` (matching Kathy's instructions & June's production example).
   3. `custom.uom`: Strictly mapped from `Item."Base Unit of Measure"`.
   4. `custom.incoterms`: Fixed default text value `'EXW'`.
-  5. `custom.lead_time`: Calculated from `Item."Lead Time Calculation"` as integer number of days.
+  5. `custom.lead_time`: Calculated from `Item."Lead Time Calculation"` as integer number of days (omitted if empty).
+  6. `custom.price_valid_until`: Date format `YYYY-MM-DD` (30 days validity for synced items if no price list ending date).
+  7. `custom.manufacture_number` (Variant Metafield): Google MPN fallback populated from `Item.Description`.
+- **Native SEO:** Automatically populates `ShopifyProduct."SEO Title"` (<= 70 chars) and `ShopifyProduct."SEO Description"` (plain text Marketing Text, <= 160 chars).
 
 ### Phase 2: Pricing Integration, Price Valid Until & Staging Infrastructure
-- **Unit Price Calculation Override (Quantity = 1.0):** Overrides standard Shopify Connector price calculation by forcing `Quantity = 1.0` on a temporary quote calculation. Evaluates minimum quantity thresholds on Sales Price lines to capture the exact unit price (`$123.45` LCY -> converted to `$158.902` SGD via BC Shop currency exchange rate `1.287177`).
+- **Unit Price Calculation Override (Quantity = 1.0):** Overrides standard Shopify Connector price calculation by forcing `Quantity = 1.0` on a temporary quote calculation. Evaluates minimum quantity thresholds on Sales Price lines and returns the true converted SGD price without overwriting by raw LCY price.
 - **Dual Pricing Engine Support:** Captures ending dates and best unit prices from both BC pricing engines:
   - **Legacy Pricing:** `Codeunit 7000 "Sales Price Calc. Mgt."` (event `OnAfterCalcBestUnitPrice`).
   - **New Pricing:** `Codeunit 7020 "Sales Line - Price"` (event `OnAfterSetPrice`).
 - **Persistent Staging Architecture (`Table 90306 APSS Item Price Ending Date`):** Resolves NST background session boundary risks (where in-memory dictionaries fail across async job queues). Stores `Item No.`, `Shop Code`, `Ending Date`, `Has Variant Conflict`, `Last Updated`, and `Last Session ID`. Automatically purges stale staging data per `Shop Code` at the start of each sync pass.
-- **Interactive Item Selection Modal & Instant Sync:** Dedicated UI Action button on the Item List page (`Add Ready Items to Shopify`) that opens a selection modal page (`Page 90300 APSS Shopify Item Selection`) with visual Checkbox controls (`[ ]` / `[✓]`) and `Select All` / `Deselect All` actions. Automatically segregates selected items into `New Ready` (runs `Report 30106`) and `Modified Ready` (runs `Report 30108` with a targeted `SystemId` filter), executing instant sync (< 1 second) and automatically transitioning status badges to `Synced Unchanged`.
+- **Interactive Item Selection Modal & Targeted Dual Sync:** Dedicated UI Action button on the Item List page (`Add Ready Items to Shopify`) that opens a selection modal page (`Page 90300 APSS Shopify Item Selection`) with visual Checkbox controls (`[ ]` / `[✓]`) and `Select All` / `Deselect All` actions. Segregates `New Ready` items (runs `Report 30106` with `SyncInventory = true`) and `Modified Ready` items (runs `Report 30108` with targeted `SystemId` filter < 1s). Eliminates manual timestamp hack.
+- **Admin Diagnostic Logging (`Table 90305` & `Page 90305 APSS Diagnostic Logs`):** Retains operational diagnostic logs recording currency conversion, source prices, exchange rates, and errors for production troubleshooting.
 
 ---
 
@@ -141,5 +145,6 @@ For full architectural breakdown, execution trace logs, historical and current E
 | **Phase 2 Pricing & Staging Implementation** | **PASS** |
 | **Phase 2 Metafield (`price_valid_until`)** | **PASS** |
 | **AL Code Compilation (`alc.exe`)** | **PASS** (`0` errors, `0` warnings) |
-| **Shopify E2E Storefront & Admin Validation** | **PASS** |
-| **Production Deployment Status** | **READY FOR DEPLOYMENT** |
+| **Kathy/June Requirement Refactor** | **Code Implemented** (Field mapping, Title anti-duplication, SEO, Inventory sync, Report 30106/30108 separation) |
+| **Production Deployment Status** | **Implementation in progress / Sandbox verification required / Not production-ready** |
+

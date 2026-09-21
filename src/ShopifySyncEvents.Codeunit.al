@@ -5,6 +5,7 @@ using Microsoft.Sales.Customer;
 using Microsoft.Sales.Document;
 using Microsoft.Sales.Pricing;
 using Microsoft.Pricing.PriceList;
+using System.Text;
 
 codeunit 90302 "APSS Shopify Sync Events"
 {
@@ -171,17 +172,14 @@ codeunit 90302 "APSS Shopify Sync Events"
         // Assign outputs only if calculation succeeded; otherwise let Shopify Connector use default calculation
         if CalcSucceeded then begin
             UnitCost := CalcUnitCost;
-            if CurrentCalcBestUnitPrice <> 0 then
-                Price := CurrentCalcBestUnitPrice
-            else
-                Price := CalcPrice;
+            Price := CalcPrice;
             ComparePrice := CalcComparePrice;
             Handled := true;
 
             // Record the ending date captured during this run into persistent staging table
             RecordEndingDateForVariant(Item."No.", ShopifyShop.Code, VariantCode, CurrentCalcEndingDate);
 
-            LogDiag('CalculateUnitPrice:Success', Item."No.", ShopifyShop.Code, true, true, Price, CurrentCalcEndingDate, '', StrSubstNo('Cost=%1, Compare=%2, SessionId=%3', CalcUnitCost, CalcComparePrice, SessionId()));
+            LogDiag('CalculateUnitPrice:Success', Item."No.", ShopifyShop.Code, true, true, Price, CurrentCalcEndingDate, '', StrSubstNo('Currency=%1, SGDPrice=%2, RawPrice=%3, Cost=%4, Compare=%5, SessionId=%6', ShopifyShop."Currency Code", CalcPrice, CurrentCalcBestUnitPrice, CalcUnitCost, CalcComparePrice, SessionId()));
         end else begin
             Handled := false;
             ErrText := GetLastErrorText();
@@ -439,6 +437,7 @@ codeunit 90302 "APSS Shopify Sync Events"
     local procedure AutoPopulateProductMetafields(ProductId: BigInteger)
     var
         ShopifyProduct: Record "Shpfy Product";
+        ShopifyMetafields: Codeunit "Shpfy Metafields";
     begin
         if ProductId = 0 then
             exit;
@@ -446,7 +445,8 @@ codeunit 90302 "APSS Shopify Sync Events"
         if not ShopifyProduct.Get(ProductId) then
             exit;
 
-        PopulateProductMetafieldRecords(ShopifyProduct);
+        if PopulateProductMetafieldRecords(ShopifyProduct) then
+            ShopifyMetafields.SyncMetafieldsToShopify(Database::"Shpfy Product", ShopifyProduct.Id, ShopifyProduct."Shop Code");
     end;
 
     local procedure PopulateProductMetafieldRecords(ShopifyProduct: Record "Shpfy Product"): Boolean
@@ -472,8 +472,8 @@ codeunit 90302 "APSS Shopify Sync Events"
         BrandName := ProductTitleCU.GetBrandName(Item);
         SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'brand', BrandName, Enum::"Shpfy Metafield Type"::single_line_text_field);
 
-        // manufacture_number (Customer Item Reference No.)
-        SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'manufacture_number', ProductTitleCU.GetCustomerItemReference(Item), Enum::"Shpfy Metafield Type"::single_line_text_field);
+        // manufacture_number (Item.Description as confirmed by Kathy & June)
+        SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'manufacture_number', Item.Description.Trim(), Enum::"Shpfy Metafield Type"::single_line_text_field);
 
         // uom
         SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'uom', Item."Base Unit of Measure", Enum::"Shpfy Metafield Type"::single_line_text_field);
@@ -481,26 +481,162 @@ codeunit 90302 "APSS Shopify Sync Events"
         // incoterms
         SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'incoterms', 'EXW', Enum::"Shpfy Metafield Type"::single_line_text_field);
 
-        // lead_time
-        if Format(Item."Lead Time Calculation") <> '' then
-            LeadTimeText := Format(CalcDate(Item."Lead Time Calculation", Today()) - Today())
-        else
-            LeadTimeText := '';
-        SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'lead_time', LeadTimeText, Enum::"Shpfy Metafield Type"::number_integer);
+        // lead_time (only insert when populated)
+        if Format(Item."Lead Time Calculation") <> '' then begin
+            LeadTimeText := Format(CalcDate(Item."Lead Time Calculation", Today()) - Today());
+            if LeadTimeText <> '' then
+                SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'lead_time', LeadTimeText, Enum::"Shpfy Metafield Type"::number_integer);
+        end;
 
         // price_valid_until (Date format: YYYY-MM-DD)
-        if PriceEndingDateRec.Get(Item."No.", ShopifyProduct."Shop Code") then begin
-            if PriceEndingDateRec."Has Variant Conflict" then
-                LogDiag('PopulateMetafield:ConflictDeferred', Item."No.", ShopifyProduct."Shop Code", true, false, 0, 0D, '', StrSubstNo('Variant ending date conflict detected in staging DB, SessionId=%1', SessionId()))
-            else if PriceEndingDateRec."Ending Date" <> 0D then begin
-                SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'price_valid_until', Format(PriceEndingDateRec."Ending Date", 0, '<Year4>-<Month,2>-<Day,2>'), Enum::"Shpfy Metafield Type"::date);
-                LogDiag('PopulateMetafield:PriceValidUntilSet', Item."No.", ShopifyProduct."Shop Code", true, true, 0, PriceEndingDateRec."Ending Date", '', StrSubstNo('Value=%1, SessionId=%2', Format(PriceEndingDateRec."Ending Date", 0, '<Year4>-<Month,2>-<Day,2>'), SessionId()));
-            end else
-                LogDiag('PopulateMetafield:EndingDateZero', Item."No.", ShopifyProduct."Shop Code", true, false, 0, 0D, '', StrSubstNo('Staging DB ending date is 0D, SessionId=%1', SessionId()));
-        end else
-            LogDiag('PopulateMetafield:NoStagingRecord', Item."No.", ShopifyProduct."Shop Code", true, false, 0, 0D, '', StrSubstNo('No APSS Item Price Ending Date record found in DB, SessionId=%1', SessionId()));
+        // Rule June: 30 days validity for synced items if no specific ending date from price list
+        if PriceEndingDateRec.Get(Item."No.", ShopifyProduct."Shop Code") and (not PriceEndingDateRec."Has Variant Conflict") and (PriceEndingDateRec."Ending Date" <> 0D) then
+            SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'price_valid_until', Format(PriceEndingDateRec."Ending Date", 0, '<Year4>-<Month,2>-<Day,2>'), Enum::"Shpfy Metafield Type"::date)
+        else
+            SetOrUpdateMetafield(ShopifyProduct.Id, 'custom', 'price_valid_until', Format(CalcDate('<+30D>', Today()), 0, '<Year4>-<Month,2>-<Day,2>'), Enum::"Shpfy Metafield Type"::date);
+
+        // Variant metafields (Google Custom Product & MPN rule evaluation)
+        PopulateVariantMetafields(ShopifyProduct.Id, Item.Description.Trim(), Item."No.", ShopifyProduct."Shop Code");
 
         exit(true);
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnAfterFillInShopifyProductFields', '', false, false)]
+    local procedure SetShopifyProductSeo(Item: Record Item; var ShopifyProduct: Record "Shpfy Product")
+    var
+        EntityText: Codeunit "Entity Text";
+        EntityTextScenario: Enum "Entity Text Scenario";
+        MarketingText: Text;
+        CleanText: Text;
+    begin
+        // Native Shopify SEO Title (max 70 chars)
+        if ShopifyProduct.Title <> '' then
+            ShopifyProduct."SEO Title" := CopyStr(ShopifyProduct.Title, 1, 70);
+
+        // Native Shopify SEO Description (from plain text Marketing Text, max 160 chars)
+        MarketingText := EntityText.GetText(Database::Item, Item.SystemId, EntityTextScenario::"Marketing Text");
+        if MarketingText <> '' then begin
+            CleanText := RemoveHtmlTags(MarketingText);
+            if StrLen(CleanText) > 160 then
+                CleanText := CopyStr(CleanText, 1, 157) + '...';
+            ShopifyProduct."SEO Description" := CopyStr(CleanText, 1, 160);
+        end else if Item.Description <> '' then
+            ShopifyProduct."SEO Description" := CopyStr(Item.Description, 1, 160);
+    end;
+
+    local procedure PopulateVariantMetafields(ProductId: BigInteger; DescriptionText: Text; ItemNo: Code[20]; ShopCode: Code[20])
+    var
+        ShopifyVariant: Record "Shpfy Variant";
+        CleanPartNo: Text;
+        IsCertainPartNo: Boolean;
+    begin
+        ShopifyVariant.SetRange("Product Id", ProductId);
+        if not ShopifyVariant.FindSet() then
+            exit;
+
+        IsCertainPartNo := TryExtractCleanPartNumber(DescriptionText, CleanPartNo);
+
+        repeat
+            // 1. custom.manufacture_number ALWAYS receives exact Description
+            SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'custom', 'manufacture_number', DescriptionText, Enum::"Shpfy Metafield Type"::single_line_text_field);
+
+            // 2. Google Custom Product is ALWAYS set to true per June's instruction
+            SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'mm-google-shopping', 'custom_product', 'true', Enum::"Shpfy Metafield Type"::boolean);
+            SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'google', 'custom_product', 'true', Enum::"Shpfy Metafield Type"::boolean);
+
+            // 3. Google MPN: ONLY set if Part Number is determined with certainty (single token without spaces). Otherwise leave empty & log warning.
+            if IsCertainPartNo then begin
+                SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'mm-google-shopping', 'mpn', CleanPartNo, Enum::"Shpfy Metafield Type"::single_line_text_field);
+                SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'google', 'mpn', CleanPartNo, Enum::"Shpfy Metafield Type"::single_line_text_field);
+            end else begin
+                LogDiag('GoogleMPN:Omitted', ItemNo, ShopCode, false, true, 0, 0D, 'Google MPN omitted due to uncertain Part Number in multi-word Description', StrSubstNo('Description=%1', DescriptionText));
+            end;
+        until ShopifyVariant.Next() = 0;
+    end;
+
+    local procedure TryExtractCleanPartNumber(DescriptionText: Text; var PartNo: Text): Boolean
+    var
+        Trimmed: Text;
+    begin
+        Trimmed := DescriptionText.Trim();
+        if Trimmed = '' then
+            exit(false);
+
+        // If description contains spaces, it's a multi-word product description (e.g. "ASCO 8210G022 Solenoid Valve"), NOT a clean single Part Number.
+        if Trimmed.Contains(' ') then
+            exit(false);
+
+        // Single token without spaces (e.g. "B012074010134")
+        PartNo := Trimmed;
+        exit(true);
+    end;
+
+    local procedure RemoveHtmlTags(InputText: Text): Text
+    var
+        Result: TextBuilder;
+        InsideTag: Boolean;
+        i: Integer;
+        c: Char;
+    begin
+        InsideTag := false;
+        for i := 1 to StrLen(InputText) do begin
+            c := InputText[i];
+            if c = '<' then
+                InsideTag := true
+            else if c = '>' then
+                InsideTag := false
+            else if not InsideTag then
+                Result.Append(c);
+        end;
+        exit(Result.ToText().Replace('&nbsp;', ' ').Replace('  ', ' ').Trim());
+    end;
+
+    local procedure SetOrUpdateMetafieldOnVariant(
+        OwnerId: BigInteger;
+        MetafieldNamespace: Text[255];
+        MetafieldName: Text[64];
+        MetafieldValue: Text;
+        MetafieldType: Enum "Shpfy Metafield Type"
+    )
+    var
+        ShopifyMetafield: Record "Shpfy Metafield";
+        ParentTableId: Integer;
+    begin
+        if OwnerId = 0 then
+            exit;
+
+        ParentTableId := Database::"Shpfy Variant";
+
+        MetafieldValue := MetafieldValue.Trim();
+        if MetafieldValue = '' then
+            exit;
+
+        if StrLen(MetafieldValue) > MaxStrLen(ShopifyMetafield.Value) then
+            MetafieldValue := CopyStr(MetafieldValue, 1, MaxStrLen(ShopifyMetafield.Value));
+
+        ShopifyMetafield.SetRange("Parent Table No.", ParentTableId);
+        ShopifyMetafield.SetRange("Owner Id", OwnerId);
+        ShopifyMetafield.SetRange(Namespace, MetafieldNamespace);
+        ShopifyMetafield.SetRange(Name, MetafieldName);
+
+        if ShopifyMetafield.FindFirst() then begin
+            if (ShopifyMetafield.Value <> MetafieldValue) or (ShopifyMetafield.Type <> MetafieldType) then begin
+                ShopifyMetafield.Value := MetafieldValue;
+                ShopifyMetafield.Type := MetafieldType;
+                ShopifyMetafield."Last Updated by BC" := CurrentDateTime;
+                ShopifyMetafield.Modify(true);
+            end;
+        end else begin
+            Clear(ShopifyMetafield);
+            ShopifyMetafield.Validate("Parent Table No.", ParentTableId);
+            ShopifyMetafield."Owner Id" := OwnerId;
+            ShopifyMetafield.Namespace := MetafieldNamespace;
+            ShopifyMetafield.Name := MetafieldName;
+            ShopifyMetafield.Value := MetafieldValue;
+            ShopifyMetafield.Type := MetafieldType;
+            ShopifyMetafield."Last Updated by BC" := CurrentDateTime;
+            ShopifyMetafield.Insert(true);
+        end;
     end;
 
     local procedure SetOrUpdateMetafield(

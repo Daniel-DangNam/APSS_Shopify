@@ -19,8 +19,8 @@ reportextension 90300 "APSS Add Item Image Gate" extends "Shpfy Add Item to Shop
                     repeat
                         IsEligible := ProductTitleCU.IsItemApproved(CandidateItem) and
                                       (CandidateItem.Picture.Count() > 0) and
-                                      (ProductTitleCU.GetCustomerItemReference(CandidateItem) <> '') and
                                       (ProductTitleCU.GetBrandName(CandidateItem) <> '') and
+                                      (CandidateItem.Description.Trim() <> '') and
                                       (CandidateItem."Base Unit of Measure" <> '');
 
                         if IsEligible then begin
