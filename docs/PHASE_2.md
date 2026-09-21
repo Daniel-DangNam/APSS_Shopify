@@ -174,8 +174,8 @@ Before marking the implementation as production-ready, the following 10 test sce
   - E.2 Multi-word Description (Item `APSS-TEST-B.2` `ASCO 8210G022 Solenoid Valve`): `custom.manufacture_number` = `ASCO 8210G022 Solenoid Valve`, `Google MPN` = `[EMPTY]` (omitted per June rule to avoid guessing, diagnostic warning `GoogleMPN:Omitted` logged), `Google Custom Product` = `true`. (PASS)
 - [x] **Test F - Converted SGD Pricing & Sales Price Engine:** **PASS** (Verified on Sandbox June9)
   - Item `APSS-TEST-PRICE-002`: Base Unit Price LCY `$123.45` converted via SGD shop exchange rate `1.287177` -> Shopify Price = `$158.90 SGD`. Verified not using Unit Cost (`$50.00`), not using Purchase Price (`$40.00`), no double-conversion, proper Quantity = 1.0 and UOM `EA`. (PASS)
-- [ ] **Test G - Dual Sync Separation & Inventory Location Sync:** **SKIPPED / BLOCKED ON SANDBOX**
-  - Inventory posting blocked in Sandbox due to Business Central Default Dimension rule conflict on sandbox location `APSS-SG` vs Item `BRAND` dimension rules (`ALLEN-BRADLEY` vs `TOBEADVISED`). Code implementation includes `<Field name="SyncInventory">true</Field>` parameter on `Report 30106`.
+- [x] **Test G - Dual Sync Separation & Inventory Location Sync:** **PASS** (Verified on Sandbox June9 & Shopify Admin)
+  - Item `APSS-TEST-PRICE-002`: Posted Item Journal `10` EA on location `APSS-SG`. Configured Shopify Location mapping (`Singapore Warehouse` -> `APSS-SG`, Stock calculation = `Free Inventory`). Verified `Sync Stock` pushed exact inventory `10` to Shopify Admin `Singapore Warehouse`. (PASS)
 - [x] **Test H - Mixed Add/Sync Selection (New Ready + Modified Ready):** **PASS** (Verified on Sandbox June9 with item `APSS-TEST-NEW-01`)
   - Selected 1 New Ready Item and 1 Modified Ready Item simultaneously in selection modal.
   - New Item executed only Add report (Report 30106), Modified Item executed only Sync report (Report 30108).
