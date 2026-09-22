@@ -156,7 +156,11 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                                 if ModifiedCount > 0 then begin
                                     SyncEvents.SetSelectedModifiedItemFilter(ModifiedFilterBuilder.ToText());
                                     ParametersXml := StrSubstNo(SyncProductsReportParametersTxt, ShopifyShop.Code);
-                                    Report.Execute(Report::"Shpfy Sync Products", ParametersXml);
+                                    Commit();
+                                    if not TryExecuteSyncProductsReport(ParametersXml) then begin
+                                        SyncEvents.ClearSelectedModifiedItemFilter();
+                                        Error(GetLastErrorText());
+                                    end;
                                     SyncEvents.ClearSelectedModifiedItemFilter();
                                 end;
 
@@ -182,4 +186,10 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
     var
         SyncStatus: Enum "APSS Shopify Item Sync Status";
         SyncStatusStyle: Text;
+
+    [TryFunction]
+    local procedure TryExecuteSyncProductsReport(ParametersXml: Text)
+    begin
+        Report.Execute(Report::"Shpfy Sync Products", ParametersXml);
+    end;
 }

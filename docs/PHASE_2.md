@@ -201,5 +201,5 @@ Before marking the implementation as production-ready, the following 10 test sce
 | **AL Build (`alc.exe`)**                          | **PASS**                                                                              | Compiled with `0` errors, `0` warnings                             |
 | **Persistent Staging (Table 90306)**              | **PASS**                                                                              | Session-safe ending date tracking                                  |
 | **Diagnostic Logging (Table 90305 / Page 90305)** | **PASS**                                                                              | Comprehensive operational tracing                                  |
-| **Shopify E2E Runtime Validation**                | **PASS**                                                                              | Tests A, B, C, D, E, F, H, I, J verified on Sandbox June9          |
+| **Shopify E2E Runtime Validation**                | **PASS**                                                                              | Tests A, B, C, D, E, F, G, H, I, J verified on Sandbox June9          |
 | **Production Deployment Status**                  | **Implementation in progress / Sandbox verification required / Not production-ready** | Completed sandbox validation; awaiting user instruction for deploy |
