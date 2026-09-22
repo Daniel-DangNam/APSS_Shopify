@@ -527,6 +527,7 @@ codeunit 90302 "APSS Shopify Sync Events"
     local procedure PopulateVariantMetafields(ProductId: BigInteger; DescriptionText: Text; ItemNo: Code[20]; ShopCode: Code[20])
     var
         ShopifyVariant: Record "Shpfy Variant";
+        ShopifyMetafields: Codeunit "Shpfy Metafields";
         CleanPartNo: Text;
         IsCertainPartNo: Boolean;
     begin
@@ -544,13 +545,18 @@ codeunit 90302 "APSS Shopify Sync Events"
             SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'mm-google-shopping', 'custom_product', 'true', Enum::"Shpfy Metafield Type"::boolean);
             SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'google', 'custom_product', 'true', Enum::"Shpfy Metafield Type"::boolean);
 
-            // 3. Google MPN: ONLY set if Part Number is determined with certainty (single token without spaces). Otherwise leave empty & log warning.
+            // 3. Google MPN: ONLY set if Part Number is determined with certainty (single token without spaces). Otherwise delete empty & log warning.
             if IsCertainPartNo then begin
                 SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'mm-google-shopping', 'mpn', CleanPartNo, Enum::"Shpfy Metafield Type"::single_line_text_field);
                 SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'google', 'mpn', CleanPartNo, Enum::"Shpfy Metafield Type"::single_line_text_field);
             end else begin
+                SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'mm-google-shopping', 'mpn', '', Enum::"Shpfy Metafield Type"::single_line_text_field);
+                SetOrUpdateMetafieldOnVariant(ShopifyVariant.Id, 'google', 'mpn', '', Enum::"Shpfy Metafield Type"::single_line_text_field);
                 LogDiag('GoogleMPN:Omitted', ItemNo, ShopCode, false, true, 0, 0D, 'Google MPN omitted due to uncertain Part Number in multi-word Description', StrSubstNo('Description=%1', DescriptionText));
             end;
+
+            // Sync variant metafields immediately to Shopify since the product metafields are also being synced by the caller
+            ShopifyMetafields.SyncMetafieldsToShopify(Database::"Shpfy Variant", ShopifyVariant.Id, ShopCode);
         until ShopifyVariant.Next() = 0;
     end;
 
@@ -608,16 +614,20 @@ codeunit 90302 "APSS Shopify Sync Events"
         ParentTableId := Database::"Shpfy Variant";
 
         MetafieldValue := MetafieldValue.Trim();
-        if MetafieldValue = '' then
-            exit;
-
-        if StrLen(MetafieldValue) > MaxStrLen(ShopifyMetafield.Value) then
-            MetafieldValue := CopyStr(MetafieldValue, 1, MaxStrLen(ShopifyMetafield.Value));
 
         ShopifyMetafield.SetRange("Parent Table No.", ParentTableId);
         ShopifyMetafield.SetRange("Owner Id", OwnerId);
         ShopifyMetafield.SetRange(Namespace, MetafieldNamespace);
         ShopifyMetafield.SetRange(Name, MetafieldName);
+
+        if MetafieldValue = '' then begin
+            if ShopifyMetafield.FindFirst() then
+                ShopifyMetafield.Delete(true);
+            exit;
+        end;
+
+        if StrLen(MetafieldValue) > MaxStrLen(ShopifyMetafield.Value) then
+            MetafieldValue := CopyStr(MetafieldValue, 1, MaxStrLen(ShopifyMetafield.Value));
 
         if ShopifyMetafield.FindFirst() then begin
             if (ShopifyMetafield.Value <> MetafieldValue) or (ShopifyMetafield.Type <> MetafieldType) then begin
