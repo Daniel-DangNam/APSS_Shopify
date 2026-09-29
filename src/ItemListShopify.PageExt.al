@@ -93,6 +93,7 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     ValidCount: Integer;
                     NewCount: Integer;
                     ModifiedCount: Integer;
+                    SyncNotification: Notification;
                     ReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Add Item to Shopify" id="30106"><Options><Field name="ShopCode">%1</Field><Field name="SyncImages">true</Field><Field name="SyncInventory">true</Field></Options><DataItems><DataItem name="Item">%2</DataItem></DataItems></ReportParameters>', Locked = true;
                     SyncProductsReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Sync Products" id="30108"><Options><Field name="OnlySyncPrices">false</Field></Options><DataItems><DataItem name="Shop">VERSION(1) SORTING(Code) WHERE(Code=1(%1))</DataItem></DataItems></ReportParameters>', Locked = true;
                 begin
@@ -166,7 +167,10 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
 
                                 CurrPage.Update(false);
 
-                                Message('%1 new item(s) and %2 modified item(s) were processed for Shopify sync.', NewCount, ModifiedCount);
+                                SyncNotification.Id := CreateGuid();
+                                SyncNotification.Message := StrSubstNo('%1 new item(s) and %2 modified item(s) were processed for Shopify sync.', NewCount, ModifiedCount);
+                                SyncNotification.Scope := NotificationScope::LocalScope;
+                                SyncNotification.Send();
                             end;
                         end;
                     end;
