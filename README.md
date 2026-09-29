@@ -1,6 +1,6 @@
 # APSS Shopify Enhancements
 
-Per-tenant extension (PTE) for Microsoft Dynamics 365 Business Central (BC 28) integrating with the Microsoft Shopify Connector. This extension delivers enhanced product image filtering, `APSS Approved` item approval gates, automated 6-metafield synchronization (including `custom.price_valid_until`), persistent DB staging for price ending dates, admin diagnostic logging, and dynamic Shopify readiness validation.
+Per-tenant extension (PTE) for Microsoft Dynamics 365 Business Central (BC 28) integrating with the Microsoft Shopify Connector. This extension delivers enhanced product image filtering, `APSS Approved` item approval gates, automated 6-metafield synchronization (including `custom.price_valid_until`), persistent DB staging for price ending dates, admin diagnostic logging, dynamic Shopify readiness validation, and automated HTML email notifications to Procurement.
 
 ---
 
@@ -13,7 +13,7 @@ Per-tenant extension (PTE) for Microsoft Dynamics 365 Business Central (BC 28) i
 - **ID Range:** `90300` to `90349`
 - **Build Status:** Clean build (`0 Errors, 0 Warnings`) using AL Compiler `v17`
 
-The primary purpose of this extension is to extend standard Business Central and Microsoft Shopify Connector capabilities, ensuring that only approved items with valid pictures and required metadata are published to Shopify, while automatically synchronizing unit pricing, price valid until dates, and custom product metafields.
+The primary purpose of this extension is to extend standard Business Central and Microsoft Shopify Connector capabilities, ensuring that only approved items with valid pictures and required metadata are published to Shopify, while automatically synchronizing unit pricing, price valid until dates, custom product metafields, and dispatching rich HTML email notifications to Procurement.
 
 ---
 
@@ -41,7 +41,11 @@ The primary purpose of this extension is to extend standard Business Central and
   - **New Pricing:** `Codeunit 7020 "Sales Line - Price"` (event `OnAfterSetPrice`).
 - **Persistent Staging Architecture (`Table 90306 APSS Item Price Ending Date`):** Resolves NST background session boundary risks (where in-memory dictionaries fail across async job queues). Stores `Item No.`, `Shop Code`, `Ending Date`, `Has Variant Conflict`, `Last Updated`, and `Last Session ID`. Automatically purges stale staging data per `Shop Code` at the start of each sync pass.
 - **Interactive Item Selection Modal & Targeted Dual Sync:** Dedicated UI Action button on the Item List page (`Add Ready Items to Shopify`) that opens a selection modal page (`Page 90300 APSS Shopify Item Selection`) with visual Checkbox controls (`[ ]` / `[✓]`) and `Select All` / `Deselect All` actions. Segregates `New Ready` items (runs `Report 30106` with `SyncInventory = true`) and `Modified Ready` items (runs `Report 30108` with targeted `SystemId` filter < 1s). Eliminates manual timestamp hack.
-- **Non-Blocking UI Notification System:** Implemented native Business Central non-blocking `Notification` banners across all sync channels (`Add Ready Items to Shopify`, `Shpfy Add Item to Shopify`, and `Shpfy Sync Products`). Replaced blocking modal messages with real-time UI notification bars upon sync completion.
+- **Automated HTML Email Notification System:**
+  - Configurable `Procurement Email` field added to `Shpfy Shop Card` (no hardcoded emails).
+  - Dedicated `Email Scenario` extension (`APSS Shopify Procurement` enum value 90300) mapped to `IT.Support@apss.com` sender account in BC.
+  - **Success Notifications:** Dispatches executive summary HTML email with green header (`#008060`), statistics cards (`New Created`, `Modified Updated`), and detailed item table with green/amber status badges.
+  - **Error Notifications:** Catches sync failures for both New and Modified items, sending a red HTML alert email (`#dc2626`) detailing error title, technical error traceback, and affected products table.
 - **Admin Diagnostic Logging (`Table 90305` & `Page 90305 APSS Diagnostic Logs`):** Retains operational diagnostic logs recording currency conversion, source prices, exchange rates, and errors for production troubleshooting.
 
 ---
@@ -55,6 +59,10 @@ Business Central Item
         │                                                                               │
         │                                                                               ├─► New Ready ──────► Report 30106 Creation
         │                                                                               └─► Modified Ready ─► Report 30108 Sync (Targeted SystemId Filter < 1s)
+        │                                                                               │
+        │                                                                               └─► HTML Email Dispatch (Codeunit 90303)
+        │                                                                                     ├─► Success: Green HTML Table & Stats
+        │                                                                                     └─► Error: Red HTML Alert & Error Details
         │
         ├─► Pricing Engine Override ──────────► Temp Quote (Qty = 1.0) ─────► Captured Unit Price ($158.902 SGD)
         │                                             │
@@ -87,17 +95,20 @@ APSS_Shopify/
 │   ├── AddItemImageGate.ReportExt.al       # Image & Approval Gate for Add Items report (ReportExt 90300)
 │   ├── APSSDiagnosticLog.Table.al          # Operational diagnostic logging table (Table 90305)
 │   ├── APSSDiagnosticLogs.Page.al          # Admin diagnostic logs UI page (Page 90305)
+│   ├── APSSEmailScenario.EnumExt.al        # Email Scenario extension for Procurement (EnumExt 90300)
 │   ├── APSSItemPriceEndingDate.Table.al    # Persistent staging table for captured ending dates (Table 90306)
+│   ├── APSSShopifyEmailMgt.Codeunit.al      # Rich HTML email generator & dispatcher (Codeunit 90303)
 │   ├── APSSShpfyItemSelBuffer.Table.al     # Temporary buffer table for selection page with checkbox (Table 90300)
-│   ├── ItemListShopify.PageExt.al          # Readiness fields, status styles, Add Ready Items action & Notification (PageExt 90300)
+│   ├── APSSShpfyShop.TableExt.al           # Procurement Email setup field on Shpfy Shop (TableExt 90301)
+│   ├── APSSShpfyShopCard.PageExt.al        # Procurement Email UI field on Shpfy Shop Card (PageExt 90301)
+│   ├── ItemListShopify.PageExt.al          # Readiness fields, status styles, Add Ready Items action & Email trigger (PageExt 90300)
 │   ├── ItemShopifyReady.TableExt.al        # Custom readiness fields on Item table (TableExt 90300)
 │   ├── ShopifyEnhancements.PermissionSet.al # Extension permissions (PermissionSet 90300)
 │   ├── ShopifyItemSelection.Page.al        # Selection modal page with visual checkbox (Page 90300)
 │   ├── ShopifyItemSyncStatus.Enum.al       # Sync status enum definition (Enum 90300)
 │   ├── ShopifyProductTitle.Codeunit.al      # Product title formatting & Customer Reference lookup (Codeunit 90300)
 │   ├── ShopifyReadinessMgt.Codeunit.al      # Readiness & sync status evaluation (Codeunit 90301)
-│   ├── ShopifySyncEvents.Codeunit.al        # Pricing override, event subscribers & metafield sync (Codeunit 90302)
-│   └── SyncProducts.ReportExt.al           # OnPostReport notification handler for Sync Products report (ReportExt 90301)
+│   └── ShopifySyncEvents.Codeunit.al        # Pricing override, event subscribers & metafield sync (Codeunit 90302)
 ├── app.json                                # AL Extension manifest
 └── README.md                               # Main GitHub repository README
 ```
@@ -115,7 +126,7 @@ APSS_Shopify/
 ### Build Command
 Compile the extension package using Microsoft AL Compiler (`alc.exe`):
 ```cmd
-alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enhancements_1.0.0.0.app"
+alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enhancements_1.0.0.1.app"
 ```
 
 ### Deployment Configuration (`launch.json`)
@@ -124,7 +135,7 @@ alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enh
   "environmentType": "Sandbox",
   "environmentName": "June9",
   "authenticator": "UserPassword",
-  "schemaUpdateMode": "Synchronize"
+  "schemaUpdateMode": "ForceSync"
 }
 ```
 
@@ -146,7 +157,7 @@ For full architectural breakdown, execution trace logs, historical and current E
 | **Phase 1 Implementation & Verification** | **PASS** |
 | **Phase 2 Pricing & Staging Implementation** | **PASS** |
 | **Phase 2 Metafield (`price_valid_until`)** | **PASS** |
+| **Automated HTML Email Notification System** | **PASS** (Configurable setup, zero hardcoding, Success & Error HTML templates verified) |
 | **AL Code Compilation (`alc.exe`)** | **PASS** (`0` errors, `0` warnings) |
 | **Kathy/June Requirement Refactor** | **Code Implemented** (Field mapping, Title anti-duplication, SEO, Inventory sync, Report 30106/30108 separation) |
 | **Production Deployment Status** | **Implementation in progress / Sandbox verification required / Not production-ready** |
-

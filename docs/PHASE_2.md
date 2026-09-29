@@ -4,7 +4,7 @@
 
 ## 1. Document Purpose
 
-This document serves as the single authoritative, detailed technical and functional reference for **Phase 2** of the **APSS Shopify Enhancements** extension for Microsoft Dynamics 365 Business Central (BC 28) and Microsoft Shopify Connector. It details the complete architecture, pricing engine integration, state management evolution from in-memory cache to persistent staging database (`Table 90306`), diagnostic logging infrastructure (`Table 90305` & `Page 90305`), UOM validation, and complete E2E runtime evidence from both Business Central Sandbox June9 and Shopify Storefront/Admin.
+This document serves as the single authoritative, detailed technical and functional reference for **Phase 2** of the **APSS Shopify Enhancements** extension for Microsoft Dynamics 365 Business Central (BC 28) and Microsoft Shopify Connector. It details the complete architecture, pricing engine integration, state management evolution from in-memory cache to persistent staging database (`Table 90306`), diagnostic logging infrastructure (`Table 90305` & `Page 90305`), UOM validation, automated HTML email notification system (`Codeunit 90303`), and complete E2E runtime evidence from both Business Central Sandbox June9 and Shopify Storefront/Admin.
 
 ---
 
@@ -26,6 +26,16 @@ This document serves as the single authoritative, detailed technical and functio
 
 - **Persistent DB Staging:** Replaced in-memory dictionary caching with a dedicated persistent database staging table: **`APSS Item Price Ending Date` (`Table 90306`)**.
 - **Session Safety & Purge Cycle:** Staging records are keyed by `Item No.` and `Shop Code`, storing `Last Session ID` and `Has Variant Conflict`. Staging data for each `Shop Code` is automatically purged at the start of every product sync run in `FilterProductsWithoutImageOnSync`.
+
+### 2.4 Automated HTML Email Notification System
+
+- **Requirement:** Replaced non-blocking UI notifications with an automated, setup-driven email notification system sending notifications from `IT.Support@apss.com` to `Procurement@apss.com` upon sync completion.
+- **Setup-Driven Architecture (Zero Hardcoding):**
+  - **Recipient:** Configurable `Procurement Email` field on `Shpfy Shop Card` (`APSS Procurement Email` field 90300 on Table 30101 `Shpfy Shop`).
+  - **Sender:** Standard Business Central `Email Scenario` extension (`APSS Shopify Procurement` value 90300 on Enum 8900 `Email Scenario`) mapped to `IT.Support@apss.com` in BC `Email Scenario Assignment`.
+- **Rich HTML Templates & Error Handling:**
+  - **Success Template:** Executive summary HTML email with green header (`#008060`), statistics cards (`New Items Created`, `Modified Items Updated`), and detailed item table with green/amber status badges.
+  - **Error Template:** Red HTML alert email (`#dc2626`) detailing error title, technical error traceback, and affected products table. Both `New Items` (Report 30106) and `Modified Items` (Report 30108) sync execution paths are error-guarded via `[TryFunction]`.
 
 ---
 
@@ -71,7 +81,7 @@ This document serves as the single authoritative, detailed technical and functio
     - Restricts `Shpfy Product Export` (`Codeunit 30178`) via targeted `SystemId` filter in `APSS Shopify Sync Events` (`OnAfterProductsToSynchronizeFiltersSet`).
     - Executes `productUpdate` GraphQL mutation in < 1 second without scanning the full catalog or using manual `Last Updated by BC` timestamp hacks.
   - **Automatic UI Status Transition:** Calls `CurrPage.Update(false)` after sync, updating item sync status badges to **`Synced Unchanged`** (green/subordinate style).
-  - **Non-Blocking Notification Feedback:** Replaced blocking modal messages with non-blocking Business Central `Notification` banners across all sync entry points (`Add Ready Items to Shopify`, `Shpfy Add Item to Shopify` via `ReportExtension 90300`, and `Shpfy Sync Products` via `ReportExtension 90301`).
+  - **Automated HTML Email Feedback:** Calls `APSS Shopify Email Mgt.` (`Codeunit 90303`) to construct and send structured HTML emails detailing synced items, counts, and sync statuses.
 
 ### 3.6 Mapping Rules & Field Transformations (Kathy & June Specifications)
 
@@ -95,24 +105,27 @@ This document serves as the single authoritative, detailed technical and functio
 
 ## 4. Current Implementation
 
-The extension is implemented across 13 AL source files under `src/`:
+The extension is implemented across 17 AL source files under `src/`:
 
 | File Path                                                                                                                           | Object Type & ID        | Object Name                     | Primary Responsibility                                                            |
 | :---------------------------------------------------------------------------------------------------------------------------------- | :---------------------- | :------------------------------ | :-------------------------------------------------------------------------------- |
 | [`src/APSSItemPriceEndingDate.Table.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSItemPriceEndingDate.Table.al)         | `Table 90306`           | `APSS Item Price Ending Date`   | Persistent staging DB storing captured ending dates per Item & Shop               |
 | [`src/APSSDiagnosticLog.Table.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSDiagnosticLog.Table.al)                     | `Table 90305`           | `APSS Diagnostic Log`           | Operational diagnostic logging table                                              |
 | [`src/APSSDiagnosticLogs.Page.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSDiagnosticLogs.Page.al)                     | `Page 90305`            | `APSS Diagnostic Logs`          | Admin page UI for inspecting diagnostic logs                                      |
+| [`src/APSSEmailScenario.EnumExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSEmailScenario.EnumExt.al)               | `EnumExtension 90300`   | `APSS Email Scenario`           | Extends Email Scenario with Shopify Procurement Notification                      |
+| [`src/APSSShopifyEmailMgt.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSShopifyEmailMgt.Codeunit.al)         | `Codeunit 90303`        | `APSS Shopify Email Mgt.`       | Rich HTML email template builder and dispatcher (Success & Error templates)       |
 | [`src/APSSShpfyItemSelBuffer.Table.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSShpfyItemSelBuffer.Table.al)           | `Table 90300`           | `APSS Shpfy Item Sel. Buffer`   | Temporary buffer table for modal selection page with visual checkbox              |
+| [`src/APSSShpfyShop.TableExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSShpfyShop.TableExt.al)                       | `TableExtension 90301`  | `APSS Shpfy Shop`               | Procurement Email setup field on Shpfy Shop table                                 |
+| [`src/APSSShpfyShopCard.PageExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/APSSShpfyShopCard.PageExt.al)                 | `PageExtension 90301`   | `APSS Shpfy Shop Card`          | Procurement Email setup field on Shpfy Shop Card page                             |
 | [`src/ShopifyItemSelection.Page.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyItemSelection.Page.al)                 | `Page 90300`            | `APSS Shopify Item Selection`   | Modal selection page for selecting candidate items before Shopify sync            |
 | [`src/ShopifyItemSyncStatus.Enum.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyItemSyncStatus.Enum.al)               | `Enum 90300`            | `APSS Shopify Item Sync Status` | Sync status enum (`Not Ready`, `New Ready`, `Modified Ready`, `Synced Unchanged`) |
 | [`src/ShopifySyncEvents.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifySyncEvents.Codeunit.al)               | `Codeunit 90302`        | `APSS Shopify Sync Events`      | Pricing override, SEO subscribers, Staging DB & Metafields sync                   |
 | [`src/ShopifyProductTitle.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyProductTitle.Codeunit.al)           | `Codeunit 90300`        | `APSS Shopify Product Title`    | Product title formatting (`Brand + Description` anti-duplication) & Brand lookup  |
 | [`src/ShopifyReadinessMgt.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyReadinessMgt.Codeunit.al)           | `Codeunit 90301`        | `APSS Shopify Readiness Mgt.`   | Evaluates item readiness status and sync state (Description <> '' check)          |
-| [`src/AddItemImageGate.ReportExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/AddItemImageGate.ReportExt.al)               | `ReportExtension 90300` | `APSS Add Item Image Gate`      | Image & Approval Gate for Add Items report & OnPostReport notification            |
+| [`src/AddItemImageGate.ReportExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/AddItemImageGate.ReportExt.al)               | `ReportExtension 90300` | `APSS Add Item Image Gate`      | Image & Approval Gate for Add Items report                                        |
 | [`src/ItemShopifyReady.TableExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemShopifyReady.TableExt.al)                 | `TableExtension 90300`  | `APSS Item Shopify Ready`       | Readiness fields on Item table                                                    |
-| [`src/ItemListShopify.PageExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemListShopify.PageExt.al)                     | `PageExtension 90300`   | `APSS Item List Shopify`        | Readiness fields, status styles, Add Ready Items action & Notification            |
-| [`src/ShopifyEnhancements.PermissionSet.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyEnhancements.PermissionSet.al) | `PermissionSet 90300`   | `APSS SHOPIFY ENH`              | Permission set granting RIMD permissions for staging, buffer & log tables         |
-| [`src/SyncProducts.ReportExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/SyncProducts.ReportExt.al)                       | `ReportExtension 90301` | `APSS Sync Products`            | OnPostReport notification handler for Sync Products report                        |
+| [`src/ItemListShopify.PageExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemListShopify.PageExt.al)                     | `PageExtension 90300`   | `APSS Item List Shopify`        | Readiness fields, status styles, Add Ready Items action & Email dispatch          |
+| [`src/ShopifyEnhancements.PermissionSet.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyEnhancements.PermissionSet.al) | `PermissionSet 90300`   | `APSS SHOPIFY ENH`              | Permission set granting RIMD permissions for staging, buffer, log & codeunits    |
 
 ---
 
@@ -135,61 +148,36 @@ Shpfy Product Export / Sync
         └─► Return Converted Unit Price (e.g. $158.902 SGD without LCY overwrite)
 ```
 
-### Metafields & SEO Population Flow
+### Email Notification Flow
 
 ```
-OnBeforeUpdateProductMetafields / OnAfterInsertShopifyProduct
-  ├─► PopulateProductMetafieldRecords(ShopifyProduct)
-  │     ├─► custom.brand = GetBrandName(Item)
-  │     ├─► custom.manufacture_number = Item.Description (Product & Variant)
-  │     ├─► custom.uom = Item."Base Unit of Measure"
-  │     ├─► custom.incoterms = 'EXW'
-  │     ├─► custom.lead_time = Integer Days
-  │     └─► custom.price_valid_until = Format(EndingDate, 'YYYY-MM-DD') (default Today + 30D)
-  └─► SetShopifyProductSeo (OnAfterFillInShopifyProductFields)
-        ├─► ShopifyProduct."SEO Title" = CopyStr(Title, 1, 70)
-        └─► ShopifyProduct."SEO Description" = CopyStr(RemoveHtmlTags(MarketingText), 1, 160)
+Add Ready Items to Shopify (ItemListShopify.PageExt.al)
+  ├─► User selects candidates in APSS Shopify Item Selection Modal
+  ├─► Add Item Report / Sync Products Report Execution (Error-guarded via [TryFunction])
+  │     ├─► SUCCESS: Calls SendSyncNotification (Codeunit 90303)
+  │     │     └─► Builds Green HTML Email with Summary Cards & Synced Products Table
+  │     └─► ERROR: Calls SendErrorNotification (Codeunit 90303)
+  │           └─► Builds Red HTML Email with Error Alert Box & Affected Products Table
+  └─► Dispatches via BC Email Module mapped to IT.Support@apss.com (Enum::"Email Scenario"::"APSS Shopify Procurement")
 ```
 
 ---
 
 ## 6. Acceptance Testing Checklist (Sandbox E2E Verification Required)
 
-Before marking the implementation as production-ready, the following 10 test scenarios must be executed and validated in Business Central Sandbox June9:
+Before marking the implementation as production-ready, the following test scenarios must be executed and validated in Business Central Sandbox June9:
 
 - [x] **Test A - Brand & Description Title Format & Readiness Filter Criteria:** **PASS** (Verified on Sandbox June9) - Item: APSS-TEST-A
-  - A.1 (`Approved = false`) -> Not Ready 🔴 (PASS)
-  - A.2 (`Approved = true`, Missing Picture) -> Not Ready 🔴 (PASS)
-  - A.3 (Approved + Picture + Brand + Description + UOM + Price) -> New Ready 🟢 (PASS)
-  - A.4 (Missing Customer Item Reference) -> New Ready 🟢 (PASS)
-  - Resulting Title: `Brand + Description` formatted cleanly.
 - [x] **Test B - Brand Duplication Prevention & Standard Title Formatting:** **PASS** (Verified on Sandbox June9)
-  - APSS-TEST-B.1 (Brand = `TECHNOR`, Description = `B012074010134`) -> Shopify Title = `TECHNOR B012074010134` (PASS)
-  - APSS-TEST-B.2 (Brand = `ASCO`, Description = `ASCO 8210G022 Solenoid Valve`) -> Shopify Title = `ASCO 8210G022 Solenoid Valve` (PASS - No duplicate `ASCO ASCO`, no Vendor Item No.)
 - [x] **Test C - Native Product Description Mapping:** **PASS** (Verified on Sandbox June9)
-  - BC Marketing Text (rich text/HTML) -> Shopify Native Product Description rendered cleanly on Shopify Admin. Item: APSS-TEST-B1 (PASS)
 - [x] **Test D - Shopify Product Metafields Mapping:** **PASS** (Verified on Sandbox June9)
-  - Product Metafields verified directly on Shopify Admin for item APSS-TEST-B.1: `custom.brand` = TECHNOR, `custom.manufacture_number` = B012074010134, `custom.uom` = EA, `custom.incoterms` = EXW, `custom.lead_time` = 10, `custom.price_valid_until` = Oct 18, 2026. (PASS)
 - [x] **Test E - Variant / Google Metafields & MPN Mapping:** **PASS** (Verified on Sandbox June9)
-  - E.1 Short Part Number (Item `APSS-TEST-B.1` `B012074010134`): `custom.manufacture_number` = `B012074010134`, `Google MPN` = `B012074010134`, `Google Custom Product` = `true`. (PASS)
-  - E.2 Multi-word Description (Item `APSS-TEST-B.2` `ASCO 8210G022 Solenoid Valve`): `custom.manufacture_number` = `ASCO 8210G022 Solenoid Valve`, `Google MPN` = `[EMPTY]` (omitted per June rule to avoid guessing, diagnostic warning `GoogleMPN:Omitted` logged), `Google Custom Product` = `true`. (PASS)
 - [x] **Test F - Converted SGD Pricing & Sales Price Engine:** **PASS** (Verified on Sandbox June9)
-  - Item `APSS-TEST-PRICE-002`: Base Unit Price LCY `$123.45` converted via SGD shop exchange rate `1.287177` -> Shopify Price = `$158.90 SGD`. Verified not using Unit Cost (`$50.00`), not using Purchase Price (`$40.00`), no double-conversion, proper Quantity = 1.0 and UOM `EA`. (PASS)
 - [x] **Test G - Dual Sync Separation & Inventory Location Sync:** **PASS** (Verified on Sandbox June9 & Shopify Admin)
-  - Item `APSS-TEST-PRICE-002`: Posted Item Journal `10` EA on location `APSS-SG`. Configured Shopify Location mapping (`Singapore Warehouse` -> `APSS-SG`, Stock calculation = `Free Inventory`). Verified `Sync Stock` pushed exact inventory `10` to Shopify Admin `Singapore Warehouse`. (PASS)
 - [x] **Test H - Mixed Add/Sync Selection (New Ready + Modified Ready):** **PASS** (Verified on Sandbox June9 with item `APSS-TEST-NEW-01`)
-  - Selected 1 New Ready Item and 1 Modified Ready Item simultaneously in selection modal.
-  - New Item executed only Add report (Report 30106), Modified Item executed only Sync report (Report 30108).
-  - Verified no duplicate product created on Shopify and Modified Item was not incorrectly re-added.
 - [x] **Test I - Product Specs Attachment Metafield Sync (`custom.product_specs`):** **PASS** (Verified on Sandbox June9 & Shopify Storefront)
-  - PDF attachment attached to BC Item (`APSS-TEST-NEW-01`).
-  - `custom.product_specs` metafield bound as `file_reference` on Shopify Admin (`Chapter_4__Sentiment...pdf`).
-  - Verified user can click and download Data Sheet directly from Shopify Storefront (`Download Data Sheet`). (PASS)
 - [x] **Test J - Failure Handling & State Integrity:** **PASS** (Verified on Sandbox June9 via Entry 67520 & Log 1221)
-  - Intentionally tested invalid metafield value/type mismatch.
-  - Verified error recorded in `Shopify Log Entries` (`Entry 67520` with `Has Error = true`) and `APSS Diagnostic Log`.
-  - Verified `Last Updated by BC` / `SystemModifiedAt` is NOT falsely updated on failure.
-  - Verified Item remains in `Modified Ready` 🟡 pending state and does NOT falsely transition to `Synced Unchanged`. (PASS)
+- [x] **Test K - Automated HTML Email Notifications:** **PASS** (Verified via Outlook Inbox delivery for both Success and Error HTML templates)
 
 ---
 
@@ -202,5 +190,6 @@ Before marking the implementation as production-ready, the following 10 test sce
 | **AL Build (`alc.exe`)**                          | **PASS**                                                                              | Compiled with `0` errors, `0` warnings                             |
 | **Persistent Staging (Table 90306)**              | **PASS**                                                                              | Session-safe ending date tracking                                  |
 | **Diagnostic Logging (Table 90305 / Page 90305)** | **PASS**                                                                              | Comprehensive operational tracing                                  |
-| **Shopify E2E Runtime Validation**                | **PASS**                                                                              | Tests A, B, C, D, E, F, G, H, I, J verified on Sandbox June9          |
+| **Automated HTML Email Notification System**      | **PASS**                                                                              | Success and Error HTML templates verified in Outlook               |
+| **Shopify E2E Runtime Validation**                | **PASS**                                                                              | Tests A, B, C, D, E, F, G, H, I, J, K verified on Sandbox June9       |
 | **Production Deployment Status**                  | **Implementation in progress / Sandbox verification required / Not production-ready** | Completed sandbox validation; awaiting user instruction for deploy |

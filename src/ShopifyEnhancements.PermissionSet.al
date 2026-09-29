@@ -13,7 +13,7 @@ permissionset 90300 "APSS SHOPIFY ENH"
         codeunit "APSS Shopify Product Title" = X,
         codeunit "APSS Shopify Readiness Mgt." = X,
         codeunit "APSS Shopify Sync Events" = X,
+        codeunit "APSS Shopify Email Mgt." = X,
         page "APSS Diagnostic Logs" = X,
         page "APSS Shopify Item Selection" = X;
 }
-
