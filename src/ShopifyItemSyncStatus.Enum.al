@@ -1,4 +1,6 @@
-namespace Microsoft.Integration.Shopify;
+namespace APSS.Shopify;
+
+using Microsoft.Integration.Shopify;
 
 enum 90300 "APSS Shopify Item Sync Status"
 {
