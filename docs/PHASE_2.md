@@ -71,7 +71,7 @@ This document serves as the single authoritative, detailed technical and functio
     - Restricts `Shpfy Product Export` (`Codeunit 30178`) via targeted `SystemId` filter in `APSS Shopify Sync Events` (`OnAfterProductsToSynchronizeFiltersSet`).
     - Executes `productUpdate` GraphQL mutation in < 1 second without scanning the full catalog or using manual `Last Updated by BC` timestamp hacks.
   - **Automatic UI Status Transition:** Calls `CurrPage.Update(false)` after sync, updating item sync status badges to **`Synced Unchanged`** (green/subordinate style).
-  - **User Feedback:** Displays post-sync summary message (e.g. `1 new item(s) and 1 modified item(s) were processed for Shopify sync.`).
+  - **Non-Blocking Notification Feedback:** Replaced blocking modal messages with non-blocking Business Central `Notification` banners across all sync entry points (`Add Ready Items to Shopify`, `Shpfy Add Item to Shopify` via `ReportExtension 90300`, and `Shpfy Sync Products` via `ReportExtension 90301`).
 
 ### 3.6 Mapping Rules & Field Transformations (Kathy & June Specifications)
 
@@ -108,10 +108,11 @@ The extension is implemented across 13 AL source files under `src/`:
 | [`src/ShopifySyncEvents.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifySyncEvents.Codeunit.al)               | `Codeunit 90302`        | `APSS Shopify Sync Events`      | Pricing override, SEO subscribers, Staging DB & Metafields sync                   |
 | [`src/ShopifyProductTitle.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyProductTitle.Codeunit.al)           | `Codeunit 90300`        | `APSS Shopify Product Title`    | Product title formatting (`Brand + Description` anti-duplication) & Brand lookup  |
 | [`src/ShopifyReadinessMgt.Codeunit.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyReadinessMgt.Codeunit.al)           | `Codeunit 90301`        | `APSS Shopify Readiness Mgt.`   | Evaluates item readiness status and sync state (Description <> '' check)          |
-| [`src/AddItemImageGate.ReportExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/AddItemImageGate.ReportExt.al)               | `ReportExtension 90300` | `APSS Add Item Image Gate`      | Image & Approval Gate for Add Items report                                        |
+| [`src/AddItemImageGate.ReportExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/AddItemImageGate.ReportExt.al)               | `ReportExtension 90300` | `APSS Add Item Image Gate`      | Image & Approval Gate for Add Items report & OnPostReport notification            |
 | [`src/ItemShopifyReady.TableExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemShopifyReady.TableExt.al)                 | `TableExtension 90300`  | `APSS Item Shopify Ready`       | Readiness fields on Item table                                                    |
-| [`src/ItemListShopify.PageExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemListShopify.PageExt.al)                     | `PageExtension 90300`   | `APSS Item List Shopify`        | Readiness fields, status styles, and Add Ready Items action on Item List          |
+| [`src/ItemListShopify.PageExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ItemListShopify.PageExt.al)                     | `PageExtension 90300`   | `APSS Item List Shopify`        | Readiness fields, status styles, Add Ready Items action & Notification            |
 | [`src/ShopifyEnhancements.PermissionSet.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/ShopifyEnhancements.PermissionSet.al) | `PermissionSet 90300`   | `APSS SHOPIFY ENH`              | Permission set granting RIMD permissions for staging, buffer & log tables         |
+| [`src/SyncProducts.ReportExt.al`](file:///d:/APSS%20Training/APSS/APSS_Shopify/src/SyncProducts.ReportExt.al)                       | `ReportExtension 90301` | `APSS Sync Products`            | OnPostReport notification handler for Sync Products report                        |
 
 ---
 

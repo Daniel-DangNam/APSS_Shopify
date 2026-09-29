@@ -41,6 +41,7 @@ The primary purpose of this extension is to extend standard Business Central and
   - **New Pricing:** `Codeunit 7020 "Sales Line - Price"` (event `OnAfterSetPrice`).
 - **Persistent Staging Architecture (`Table 90306 APSS Item Price Ending Date`):** Resolves NST background session boundary risks (where in-memory dictionaries fail across async job queues). Stores `Item No.`, `Shop Code`, `Ending Date`, `Has Variant Conflict`, `Last Updated`, and `Last Session ID`. Automatically purges stale staging data per `Shop Code` at the start of each sync pass.
 - **Interactive Item Selection Modal & Targeted Dual Sync:** Dedicated UI Action button on the Item List page (`Add Ready Items to Shopify`) that opens a selection modal page (`Page 90300 APSS Shopify Item Selection`) with visual Checkbox controls (`[ ]` / `[✓]`) and `Select All` / `Deselect All` actions. Segregates `New Ready` items (runs `Report 30106` with `SyncInventory = true`) and `Modified Ready` items (runs `Report 30108` with targeted `SystemId` filter < 1s). Eliminates manual timestamp hack.
+- **Non-Blocking UI Notification System:** Implemented native Business Central non-blocking `Notification` banners across all sync channels (`Add Ready Items to Shopify`, `Shpfy Add Item to Shopify`, and `Shpfy Sync Products`). Replaced blocking modal messages with real-time UI notification bars upon sync completion.
 - **Admin Diagnostic Logging (`Table 90305` & `Page 90305 APSS Diagnostic Logs`):** Retains operational diagnostic logs recording currency conversion, source prices, exchange rates, and errors for production troubleshooting.
 
 ---
@@ -88,14 +89,15 @@ APSS_Shopify/
 │   ├── APSSDiagnosticLogs.Page.al          # Admin diagnostic logs UI page (Page 90305)
 │   ├── APSSItemPriceEndingDate.Table.al    # Persistent staging table for captured ending dates (Table 90306)
 │   ├── APSSShpfyItemSelBuffer.Table.al     # Temporary buffer table for selection page with checkbox (Table 90300)
-│   ├── ItemListShopify.PageExt.al          # Readiness fields, status styles, and Add Ready Items action (PageExt 90300)
+│   ├── ItemListShopify.PageExt.al          # Readiness fields, status styles, Add Ready Items action & Notification (PageExt 90300)
 │   ├── ItemShopifyReady.TableExt.al        # Custom readiness fields on Item table (TableExt 90300)
 │   ├── ShopifyEnhancements.PermissionSet.al # Extension permissions (PermissionSet 90300)
 │   ├── ShopifyItemSelection.Page.al        # Selection modal page with visual checkbox (Page 90300)
 │   ├── ShopifyItemSyncStatus.Enum.al       # Sync status enum definition (Enum 90300)
 │   ├── ShopifyProductTitle.Codeunit.al      # Product title formatting & Customer Reference lookup (Codeunit 90300)
 │   ├── ShopifyReadinessMgt.Codeunit.al      # Readiness & sync status evaluation (Codeunit 90301)
-│   └── ShopifySyncEvents.Codeunit.al        # Pricing override, event subscribers & metafield sync (Codeunit 90302)
+│   ├── ShopifySyncEvents.Codeunit.al        # Pricing override, event subscribers & metafield sync (Codeunit 90302)
+│   └── SyncProducts.ReportExt.al           # OnPostReport notification handler for Sync Products report (ReportExt 90301)
 ├── app.json                                # AL Extension manifest
 └── README.md                               # Main GitHub repository README
 ```
