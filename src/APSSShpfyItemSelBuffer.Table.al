@@ -1,4 +1,6 @@
-namespace Microsoft.Integration.Shopify;
+namespace APSS.Shopify;
+
+using Microsoft.Integration.Shopify;
 
 using Microsoft.Inventory.Item;
 

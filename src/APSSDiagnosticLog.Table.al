@@ -1,4 +1,6 @@
-namespace Microsoft.Integration.Shopify;
+namespace APSS.Shopify;
+
+using Microsoft.Integration.Shopify;
 
 table 90305 "APSS Diagnostic Log"
 {
