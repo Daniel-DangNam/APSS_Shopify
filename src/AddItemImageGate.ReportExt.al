@@ -40,14 +40,4 @@ reportextension 90300 "APSS Add Item Image Gate" extends "Shpfy Add Item to Shop
             end;
         }
     }
-
-    trigger OnPostReport()
-    var
-        SyncNotification: Notification;
-    begin
-        SyncNotification.Id := CreateGuid();
-        SyncNotification.Message := 'Shopify Add Item Sync has completed.';
-        SyncNotification.Scope := NotificationScope::LocalScope;
-        SyncNotification.Send();
-    end;
 }

@@ -82,9 +82,9 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     SelectedItem: Record Item temporary;
                     FilterNewItem: Record Item;
                     ShopifyShop: Record "Shpfy Shop";
-                    ShpfyProduct: Record "Shpfy Product";
                     ShopifyReadinessMgt: Codeunit "APSS Shopify Readiness Mgt.";
                     SyncEvents: Codeunit "APSS Shopify Sync Events";
+                    EmailMgt: Codeunit "APSS Shopify Email Mgt.";
                     ItemSelectionPage: Page "APSS Shopify Item Selection";
                     Status: Enum "APSS Shopify Item Sync Status";
                     NewFilterBuilder: TextBuilder;
@@ -93,7 +93,6 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     ValidCount: Integer;
                     NewCount: Integer;
                     ModifiedCount: Integer;
-                    SyncNotification: Notification;
                     ReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Add Item to Shopify" id="30106"><Options><Field name="ShopCode">%1</Field><Field name="SyncImages">true</Field><Field name="SyncInventory">true</Field></Options><DataItems><DataItem name="Item">%2</DataItem></DataItems></ReportParameters>', Locked = true;
                     SyncProductsReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Sync Products" id="30108"><Options><Field name="OnlySyncPrices">false</Field></Options><DataItems><DataItem name="Shop">VERSION(1) SORTING(Code) WHERE(Code=1(%1))</DataItem></DataItems></ReportParameters>', Locked = true;
                 begin
@@ -150,7 +149,15 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                                 if NewCount > 0 then begin
                                     FilterNewItem.SetFilter("No.", NewFilterBuilder.ToText());
                                     ParametersXml := StrSubstNo(ReportParametersTxt, ShopifyShop.Code, FilterNewItem.GetView(false));
-                                    Report.Execute(Report::"Shpfy Add Item to Shopify", ParametersXml);
+                                    if not TryExecuteAddItemReport(ParametersXml) then begin
+                                        EmailMgt.SendErrorNotification(
+                                            ShopifyShop.Code,
+                                            SelectedItem,
+                                            'Shopify Add Item Sync Failure',
+                                            GetLastErrorText()
+                                        );
+                                        Error(GetLastErrorText());
+                                    end;
                                 end;
 
                                 // 2. Process Modified Ready Items through Sync Products Report with targeted SystemId filter
@@ -160,6 +167,12 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                                     Commit();
                                     if not TryExecuteSyncProductsReport(ParametersXml) then begin
                                         SyncEvents.ClearSelectedModifiedItemFilter();
+                                        EmailMgt.SendErrorNotification(
+                                            ShopifyShop.Code,
+                                            SelectedItem,
+                                            'Shopify Product Sync Failure',
+                                            GetLastErrorText()
+                                        );
                                         Error(GetLastErrorText());
                                     end;
                                     SyncEvents.ClearSelectedModifiedItemFilter();
@@ -167,10 +180,7 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
 
                                 CurrPage.Update(false);
 
-                                SyncNotification.Id := CreateGuid();
-                                SyncNotification.Message := StrSubstNo('%1 new item(s) and %2 modified item(s) were processed for Shopify sync.', NewCount, ModifiedCount);
-                                SyncNotification.Scope := NotificationScope::LocalScope;
-                                SyncNotification.Send();
+                                EmailMgt.SendSyncNotification(ShopifyShop.Code, SelectedItem, NewCount, ModifiedCount);
                             end;
                         end;
                     end;
@@ -190,6 +200,12 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
     var
         SyncStatus: Enum "APSS Shopify Item Sync Status";
         SyncStatusStyle: Text;
+
+    [TryFunction]
+    local procedure TryExecuteAddItemReport(ParametersXml: Text)
+    begin
+        Report.Execute(Report::"Shpfy Add Item to Shopify", ParametersXml);
+    end;
 
     [TryFunction]
     local procedure TryExecuteSyncProductsReport(ParametersXml: Text)
