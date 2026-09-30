@@ -126,7 +126,7 @@ APSS_Shopify/
 ### Build Command
 Compile the extension package using Microsoft AL Compiler (`alc.exe`):
 ```cmd
-alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enhancements_1.0.0.1.app"
+alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enhancements_1.0.0.3.app"
 ```
 
 ### Deployment Configuration (`launch.json`)
