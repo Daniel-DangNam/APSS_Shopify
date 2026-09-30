@@ -95,6 +95,7 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     ModifiedCount: Integer;
                     ReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Add Item to Shopify" id="30106"><Options><Field name="ShopCode">%1</Field><Field name="SyncImages">true</Field><Field name="SyncInventory">true</Field></Options><DataItems><DataItem name="Item">%2</DataItem></DataItems></ReportParameters>', Locked = true;
                     SyncProductsReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Sync Products" id="30108"><Options><Field name="OnlySyncPrices">false</Field></Options><DataItems><DataItem name="Shop">VERSION(1) SORTING(Code) WHERE(Code=1(%1))</DataItem></DataItems></ReportParameters>', Locked = true;
+                    SyncImagesReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Sync Images" id="30107"><DataItems><DataItem name="Shop">VERSION(1) SORTING(Code) WHERE(Code=1(%1))</DataItem></DataItems></ReportParameters>', Locked = true;
                 begin
                     CandidateItem.Reset();
                     ReadyItem.Reset();
@@ -178,6 +179,19 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                                     SyncEvents.ClearSelectedModifiedItemFilter();
                                 end;
 
+                                // 3. Process Product Images through Sync Images Report
+                                ParametersXml := StrSubstNo(SyncImagesReportParametersTxt, ShopifyShop.Code);
+                                Commit();
+                                if not TryExecuteSyncImagesReport(ParametersXml) then begin
+                                    EmailMgt.SendErrorNotification(
+                                        ShopifyShop.Code,
+                                        SelectedItem,
+                                        'Shopify Image Sync Failure',
+                                        GetLastErrorText()
+                                    );
+                                    Error(GetLastErrorText());
+                                end;
+
                                 CurrPage.Update(false);
 
                                 EmailMgt.SendSyncNotification(ShopifyShop.Code, SelectedItem, NewCount, ModifiedCount);
@@ -211,5 +225,11 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
     local procedure TryExecuteSyncProductsReport(ParametersXml: Text)
     begin
         Report.Execute(Report::"Shpfy Sync Products", ParametersXml);
+    end;
+
+    [TryFunction]
+    local procedure TryExecuteSyncImagesReport(ParametersXml: Text)
+    begin
+        Report.Execute(Report::"Shpfy Sync Images", ParametersXml);
     end;
 }
