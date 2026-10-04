@@ -61,7 +61,7 @@ codeunit 90302 "APSS Shopify Sync Events"
         DiagLog.Insert(true);
     end;
 
-    // 2. APPROVAL & IMAGE FILTERING — SYNC PRODUCTS FLOW
+    // 2. APPROVAL, IMAGE & SKU PRECHECK FILTERING — SYNC PRODUCTS FLOW
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnAfterProductsToSynchronizeFiltersSet', '', false, false)]
     local procedure FilterProductsWithoutImageOnSync(
         var ShopifyProduct: Record "Shpfy Product";
@@ -73,8 +73,13 @@ codeunit 90302 "APSS Shopify Sync Events"
         Item: Record Item;
         StagingRec: Record "APSS Item Price Ending Date";
         ProductTitleCU: Codeunit "APSS Shopify Product Title";
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
+        SyncAction: Enum "APSS Shpfy Sync Action";
+        BatchSKUsList: List of [Text];
+        ReasonText: Text;
         FilterBuilder: TextBuilder;
         ValidProductCount: Integer;
+        IsEligible: Boolean;
     begin
         IsCalculatingPrice := false;
         CurrentCalcItemNo := '';
@@ -88,6 +93,9 @@ codeunit 90302 "APSS Shopify Sync Events"
         if not StagingRec.IsEmpty() then
             StagingRec.DeleteAll();
 
+        // PURGE GHOST UNMAPPED RECORDS (Id = 0) from past failed sync attempts
+        PurgeGhostShpfyProducts(Shop.Code);
+
         LogDiag('FilterProducts:Start', '', Shop.Code, true, false, 0, 0D, '', StrSubstNo('SyncPrices=%1, ProductMetafieldsToShopify=%2, SessionId=%3', Shop."Sync Prices", Shop."Product Metafields To Shopify", SessionId()));
 
         if SelectedModifiedItemFilter <> '' then
@@ -97,13 +105,17 @@ codeunit 90302 "APSS Shopify Sync Events"
         if ProductLoop.FindSet() then
             repeat
                 if not IsNullGuid(ProductLoop."Item SystemId") then
-                    if Item.GetBySystemId(ProductLoop."Item SystemId") then
-                        if ProductTitleCU.IsItemApproved(Item) and (Item.Picture.Count() > 0) then begin
+                    if Item.GetBySystemId(ProductLoop."Item SystemId") then begin
+                        IsEligible := SKUPrecheckCU.EvaluateItemSyncEligibility(Shop.Code, Item, BatchSKUsList, SyncAction, ReasonText);
+
+                        if IsEligible and ProductTitleCU.IsItemApproved(Item) and (Item.Picture.Count() > 0) then begin
                             if FilterBuilder.Length() > 0 then
                                 FilterBuilder.Append('|');
                             FilterBuilder.Append(Format(ProductLoop."Item SystemId", 0, 4));
                             ValidProductCount += 1;
-                        end;
+                        end else if not IsEligible then
+                            DeleteSingleGhostProduct(ProductLoop);
+                    end;
             until ProductLoop.Next() = 0;
 
         if ValidProductCount > 0 then
@@ -700,4 +712,28 @@ codeunit 90302 "APSS Shopify Sync Events"
             LogDiag('SetMetafield:Insert', Format(OwnerId), '', true, true, 0, 0D, '', StrSubstNo('%1.%2=%3, SessionId=%4', MetafieldNamespace, MetafieldName, MetafieldValue, SessionId()));
         end;
     end;
+
+    local procedure PurgeGhostShpfyProducts(ShopCode: Code[20])
+    var
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
+    begin
+        SKUPrecheckCU.PurgeIncompleteRecords(ShopCode);
+    end;
+
+    local procedure DeleteSingleGhostProduct(var GhostProduct: Record "Shpfy Product")
+    var
+        GhostVar: Record "Shpfy Variant";
+    begin
+        if GhostProduct.Id = 0 then begin
+            GhostVar.SetRange("Shop Code", GhostProduct."Shop Code");
+            GhostVar.SetRange("Item SystemId", GhostProduct."Item SystemId");
+            GhostVar.SetRange(Id, 0);
+            if not GhostVar.IsEmpty() then
+                GhostVar.DeleteAll(true);
+
+            GhostProduct.Delete(true);
+        end;
+    end;
 }
+
+
