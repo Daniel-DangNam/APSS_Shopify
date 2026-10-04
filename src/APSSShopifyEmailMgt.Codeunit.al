@@ -64,14 +64,14 @@ codeunit 90303 "APSS Shopify Email Mgt."
 
     local procedure BuildSuccessHtmlBody(ShopCode: Code[20]; var SelectedItem: Record Item temporary; NewCount: Integer; ModifiedCount: Integer): Text
     var
-        ShopifyReadinessMgt: Codeunit "APSS Shopify Readiness Mgt.";
-        Status: Enum "APSS Shopify Item Sync Status";
+        ShpfyProduct: Record "Shpfy Product";
         BodyBuilder: TextBuilder;
         TableRowsBuilder: TextBuilder;
         StatusBadgeHtml: Text;
-        ItemNote: Text;
-        HasItemWarning: Boolean;
-        TotalWarnings: Integer;
+        ItemDetailsHtml: Text;
+        IsSynced: Boolean;
+        FailedCount: Integer;
+        SuccessCount: Integer;
         HeaderColor: Text;
         HeaderTitle: Text;
     begin
@@ -80,31 +80,32 @@ codeunit 90303 "APSS Shopify Email Mgt."
 
         if SelectedItem.FindSet() then
             repeat
-                HasItemWarning := false;
-                Status := ShopifyReadinessMgt.GetItemSyncStatus(SelectedItem);
-                ItemNote := GetItemSyncNote(SelectedItem, ShopCode, HasItemWarning);
+                ShpfyProduct.Reset();
+                ShpfyProduct.SetRange("Shop Code", ShopCode);
+                ShpfyProduct.SetRange("Item SystemId", SelectedItem.SystemId);
+                IsSynced := ShpfyProduct.FindFirst() and (ShpfyProduct.Id <> 0);
 
-                if HasItemWarning then begin
-                    TotalWarnings += 1;
-                    StatusBadgeHtml := '<span style="background-color: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">REQUIRES ATTENTION</span>';
-                end else if Status = Enum::"APSS Shopify Item Sync Status"::"New Ready" then
-                    StatusBadgeHtml := '<span style="background-color: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">NEW CREATED</span>'
-                else if Status = Enum::"APSS Shopify Item Sync Status"::"Modified Ready" then
-                    StatusBadgeHtml := '<span style="background-color: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">MODIFIED UPDATED</span>'
-                else
-                    StatusBadgeHtml := '<span style="background-color: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">SYNCED</span>';
+                if IsSynced then begin
+                    SuccessCount += 1;
+                    StatusBadgeHtml := '<span style="background-color: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">SYNCED</span>';
+                    ItemDetailsHtml := '<span style="color: #166534; font-size: 12px;">Synced successfully</span>';
+                end else begin
+                    FailedCount += 1;
+                    StatusBadgeHtml := '<span style="background-color: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">FAILED</span>';
+                    ItemDetailsHtml := '<span style="color: #dc2626; font-size: 12px; font-weight: 600;">Chưa sync được (Lỗi API Shopify - Xem chi tiết tại Shopify Log Entries)</span>';
+                end;
 
                 TableRowsBuilder.Append('<tr>');
                 TableRowsBuilder.Append(StrSubstNo('<td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600;">%1</td>', SelectedItem."No."));
                 TableRowsBuilder.Append(StrSubstNo('<td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">%1</td>', SelectedItem.Description));
                 TableRowsBuilder.Append(StrSubstNo('<td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">%1</td>', StatusBadgeHtml));
-                TableRowsBuilder.Append(StrSubstNo('<td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; color: #475569;">%1</td>', ItemNote));
+                TableRowsBuilder.Append(StrSubstNo('<td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">%1</td>', ItemDetailsHtml));
                 TableRowsBuilder.Append('</tr>');
             until SelectedItem.Next() = 0;
 
-        if TotalWarnings > 0 then begin
+        if FailedCount > 0 then begin
             HeaderColor := 'linear-gradient(135deg, #d97706 0%, #92400e 100%)';
-            HeaderTitle := StrSubstNo('Shopify Product Sync Completed (%1 Warnings / Items to Check)', TotalWarnings);
+            HeaderTitle := StrSubstNo('Shopify Product Sync Completed (%1 Synced, %2 Failed)', SuccessCount, FailedCount);
         end;
 
         BodyBuilder.Append('<!DOCTYPE html><html><head><meta charset="utf-8"></head>');
@@ -129,8 +130,8 @@ codeunit 90303 "APSS Shopify Email Mgt."
         BodyBuilder.Append('<thead><tr style="background-color: #f1f5f9; color: #475569; text-align: left;">');
         BodyBuilder.Append('<th style="padding: 10px 12px; font-weight: 600; border-bottom: 2px solid #e2e8f0; width: 15%;">Item No.</th>');
         BodyBuilder.Append('<th style="padding: 10px 12px; font-weight: 600; border-bottom: 2px solid #e2e8f0; width: 35%;">Description</th>');
-        BodyBuilder.Append('<th style="padding: 10px 12px; font-weight: 600; border-bottom: 2px solid #e2e8f0; width: 20%;">Sync Action</th>');
-        BodyBuilder.Append('<th style="padding: 10px 12px; font-weight: 600; border-bottom: 2px solid #e2e8f0; width: 30%;">Status Notes / Details</th>');
+        BodyBuilder.Append('<th style="padding: 10px 12px; font-weight: 600; border-bottom: 2px solid #e2e8f0; width: 20%;">Sync Status</th>');
+        BodyBuilder.Append('<th style="padding: 10px 12px; font-weight: 600; border-bottom: 2px solid #e2e8f0; width: 30%;">Details</th>');
         BodyBuilder.Append('</tr></thead>');
         BodyBuilder.Append('<tbody>');
         BodyBuilder.Append(TableRowsBuilder.ToText());
@@ -143,39 +144,6 @@ codeunit 90303 "APSS Shopify Email Mgt."
         BodyBuilder.Append('</div></div></body></html>');
 
         exit(BodyBuilder.ToText());
-    end;
-
-    local procedure GetItemSyncNote(Item: Record Item; ShopCode: Code[20]; var HasWarning: Boolean): Text
-    var
-        ShpfyProduct: Record "Shpfy Product";
-        DiagLog: Record "APSS Diagnostic Log";
-        NoteBuilder: TextBuilder;
-    begin
-        ShpfyProduct.SetRange("Shop Code", ShopCode);
-        ShpfyProduct.SetRange("Item SystemId", Item.SystemId);
-        if ShpfyProduct.IsEmpty() then begin
-            HasWarning := true;
-            exit('⚠️ Product not linked on Shopify yet. Please check Shopify Log Entries.');
-        end;
-
-        // Check Diagnostic Log for recent errors on this item
-        DiagLog.SetRange("Item No.", Item."No.");
-        DiagLog.SetRange("Shop Code", ShopCode);
-        DiagLog.SetRange("Calc Succeeded", false);
-        if DiagLog.FindFirst() then begin
-            HasWarning := true;
-            NoteBuilder.Append('⚠️ Price Calc Error: ' + DiagLog."Error Text");
-        end;
-
-        if Format(Item."Lead Time Calculation") = '' then begin
-            if NoteBuilder.Length() > 0 then NoteBuilder.Append('; ');
-            NoteBuilder.Append('Lead Time empty');
-        end;
-
-        if NoteBuilder.Length() = 0 then
-            NoteBuilder.Append('OK (Metafields & Images synced)');
-
-        exit(NoteBuilder.ToText());
     end;
 
     local procedure BuildErrorHtmlBody(ShopCode: Code[20]; var SelectedItem: Record Item temporary; ErrorTitle: Text; ErrorDetails: Text): Text

@@ -27,6 +27,13 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                 StyleExpr = SyncStatusStyle;
             }
         }
+        addfirst(factboxes)
+        {
+            part(ShopifyReadinessFactBox; "APSS Shpfy Readiness FactBox")
+            {
+                ApplicationArea = All;
+            }
+        }
     }
 
     actions
@@ -85,14 +92,19 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     ShopifyReadinessMgt: Codeunit "APSS Shopify Readiness Mgt.";
                     SyncEvents: Codeunit "APSS Shopify Sync Events";
                     EmailMgt: Codeunit "APSS Shopify Email Mgt.";
+                    SKUPrecheck: Codeunit "APSS Shopify SKU Precheck";
                     ItemSelectionPage: Page "APSS Shopify Item Selection";
                     Status: Enum "APSS Shopify Item Sync Status";
+                    SyncAction: Enum "APSS Shpfy Sync Action";
                     NewFilterBuilder: TextBuilder;
                     ModifiedFilterBuilder: TextBuilder;
+                    BatchSKUsList: List of [Text];
+                    ReasonText: Text;
                     ParametersXml: Text;
                     ValidCount: Integer;
                     NewCount: Integer;
                     ModifiedCount: Integer;
+                    SkippedSKUCount: Integer;
                     ReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Add Item to Shopify" id="30106"><Options><Field name="ShopCode">%1</Field><Field name="SyncImages">true</Field><Field name="SyncInventory">true</Field></Options><DataItems><DataItem name="Item">%2</DataItem></DataItems></ReportParameters>', Locked = true;
                     SyncProductsReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Sync Products" id="30108"><Options><Field name="OnlySyncPrices">false</Field></Options><DataItems><DataItem name="Shop">VERSION(1) SORTING(Code) WHERE(Code=1(%1))</DataItem></DataItems></ReportParameters>', Locked = true;
                     SyncImagesReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Sync Images" id="30107"><DataItems><DataItem name="Shop">VERSION(1) SORTING(Code) WHERE(Code=1(%1))</DataItem></DataItems></ReportParameters>', Locked = true;
@@ -123,29 +135,43 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     if ItemSelectionPage.RunModal() = Action::LookupOK then begin
                         ItemSelectionPage.GetSelectedItems(SelectedItem);
                         if SelectedItem.FindSet() then begin
+                            if not ShopifyShop.FindFirst() then
+                                Error('No Shopify Shop found. Please configure a Shopify Shop first.');
+
+                            if SKUPrecheck.IsPrecheckEnabled(ShopifyShop.Code) then
+                                if (SKUPrecheck.GetShopifyAccessToken(ShopifyShop.Code) = '') or (SKUPrecheck.GetShopUrl(ShopifyShop) = '') then
+                                    Error('Shopify SKU Precheck is enabled, but Shopify credentials are not configured on Shopify Shop %1.\\Please configure "APSS Shopify URL" and "Client ID / Client Secret" (or manual Token) on the Shopify Shop Card before exporting.', ShopifyShop.Code);
+
                             NewCount := 0;
                             ModifiedCount := 0;
+                            SkippedSKUCount := 0;
                             Clear(NewFilterBuilder);
                             Clear(ModifiedFilterBuilder);
+                            Clear(BatchSKUsList);
+
                             repeat
-                                Status := ShopifyReadinessMgt.GetItemSyncStatus(SelectedItem);
-                                if Status = Enum::"APSS Shopify Item Sync Status"::"New Ready" then begin
-                                    NewCount += 1;
-                                    if NewFilterBuilder.Length() > 0 then
-                                        NewFilterBuilder.Append('|');
-                                    NewFilterBuilder.Append('''' + SelectedItem."No." + '''');
-                                end else if Status = Enum::"APSS Shopify Item Sync Status"::"Modified Ready" then begin
-                                    ModifiedCount += 1;
-                                    if ModifiedFilterBuilder.Length() > 0 then
-                                        ModifiedFilterBuilder.Append('|');
-                                    ModifiedFilterBuilder.Append(Format(SelectedItem.SystemId, 0, 4));
-                                end;
+                                if SKUPrecheck.EvaluateItemSyncEligibility(ShopifyShop.Code, SelectedItem, BatchSKUsList, SyncAction, ReasonText) then begin
+                                    case SyncAction of
+                                        SyncAction::Create:
+                                            begin
+                                                NewCount += 1;
+                                                if NewFilterBuilder.Length() > 0 then
+                                                    NewFilterBuilder.Append('|');
+                                                NewFilterBuilder.Append('''' + SelectedItem."No." + '''');
+                                            end;
+                                        SyncAction::Update:
+                                            begin
+                                                ModifiedCount += 1;
+                                                if ModifiedFilterBuilder.Length() > 0 then
+                                                    ModifiedFilterBuilder.Append('|');
+                                                ModifiedFilterBuilder.Append(Format(SelectedItem.SystemId, 0, 4));
+                                            end;
+                                    end;
+                                end else
+                                    SkippedSKUCount += 1;
                             until SelectedItem.Next() = 0;
 
                             if (NewCount > 0) or (ModifiedCount > 0) then begin
-                                if not ShopifyShop.FindFirst() then
-                                    Error('No Shopify Shop found. Please configure a Shopify Shop first.');
-
                                 // 1. Process New Ready Items through Add Item Report
                                 if NewCount > 0 then begin
                                     FilterNewItem.SetFilter("No.", NewFilterBuilder.ToText());
@@ -195,10 +221,71 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                                 CurrPage.Update(false);
 
                                 EmailMgt.SendSyncNotification(ShopifyShop.Code, SelectedItem, NewCount, ModifiedCount);
-                            end;
+
+                                if SkippedSKUCount > 0 then
+                                    Message('%1 new item(s) and %2 modified item(s) were processed. %3 item(s) were skipped due to SKU conflict/duplicate (see Shopify Reconcile Log).', NewCount, ModifiedCount, SkippedSKUCount);
+                            end else if SkippedSKUCount > 0 then
+                                Message('All %1 selected new item(s) were skipped due to SKU conflicts or duplicates. See Shopify Reconcile Log for details.', SkippedSKUCount);
                         end;
                     end;
                 end;
+            }
+            action("Purge Incomplete Shopify Records")
+            {
+                ApplicationArea = All;
+                Caption = 'Purge Incomplete Shopify Records (Id = 0)';
+                Image = Delete;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedOnly = true;
+                ToolTip = 'Deletes all unmapped/incomplete Shopify Product and Variant records (Id = 0) left by failed sync attempts.';
+
+                trigger OnAction()
+                var
+                    SKUPrecheck: Codeunit "APSS Shopify SKU Precheck";
+                begin
+                    if Confirm('Do you want to purge all incomplete/ghost Shopify Product and Variant records (Id = 0)?', true) then begin
+                        SKUPrecheck.PurgeIncompleteRecords('');
+                        Message('Incomplete records (Id = 0) have been purged.');
+                        CurrPage.Update(false);
+                    end;
+                end;
+            }
+            action("Scan Orphaned Shopify Mappings")
+            {
+                ApplicationArea = All;
+                Caption = 'Scan Orphaned Shopify Mappings';
+                Image = Find;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedOnly = true;
+                ToolTip = 'Scans BC Shopify Products for IDs that no longer exist on Shopify Admin. Findings are logged without deleting records.';
+
+                trigger OnAction()
+                var
+                    Shop: Record "Shpfy Shop";
+                    SKUPrecheck: Codeunit "APSS Shopify SKU Precheck";
+                    OrphanCount: Integer;
+                begin
+                    if Shop.FindFirst() then begin
+                        SKUPrecheck.ScanOrphanedMappings(Shop.Code, OrphanCount);
+                        Message('Scan completed for Shop %1. %2 orphaned mapping(s) found and logged in Shopify Reconcile Log.', Shop.Code, OrphanCount);
+                        Page.Run(Page::"APSS Shpfy Reconcile Log");
+                    end else
+                        Error('No Shopify Shop found.');
+                end;
+            }
+            action("Shopify Reconcile Log")
+            {
+                ApplicationArea = All;
+                Caption = 'Shopify Reconcile Log';
+                Image = Log;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedIsBig = true;
+                PromotedOnly = true;
+                RunObject = Page "APSS Shpfy Reconcile Log";
+                ToolTip = 'Opens the Shopify Reconcile Log showing blocked SKU exports and orphaned mappings.';
             }
         }
     }

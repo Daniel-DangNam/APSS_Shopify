@@ -22,4 +22,8 @@ enum 90300 "APSS Shopify Item Sync Status"
     {
         Caption = 'Synced Unchanged';
     }
+    value(4; "Needs Reconciliation")
+    {
+        Caption = 'Needs Reconciliation';
+    }
 }
