@@ -279,6 +279,23 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         if not ShopifyShop.Get(ShopCode) then
             exit(false);
 
+        // Pre-check payload size (Marketing Text length & embedded Base64 images)
+        if not CheckItemPayloadLimit(Item, ReasonText) then begin
+            SyncAction := SyncAction::Block_NeedsReconciliation;
+            LogReconcileReason(
+                Item."No.",
+                '',
+                CopyStr(Item."No.", 1, 50),
+                0,
+                0,
+                Item.Description,
+                'Draft',
+                Enum::"APSS Shpfy Reconcile Reason"::PAYLOAD_SIZE_EXCEEDED,
+                ReasonText
+            );
+            exit(false);
+        end;
+
         // Check if BC already has a valid mapping (Id <> 0)
         ShopifyProduct.SetRange("Shop Code", ShopCode);
         ShopifyProduct.SetRange("Item SystemId", Item.SystemId);
@@ -887,5 +904,33 @@ codeunit 90304 "APSS Shopify SKU Precheck"
             if JToken.IsValue() then
                 exit(JToken.AsValue().AsText());
         exit('');
+    end;
+
+    local procedure CheckItemPayloadLimit(Item: Record Item; var ReasonText: Text): Boolean
+    var
+        EntityText: Codeunit "Entity Text";
+        EntityTextScenario: Enum "Entity Text Scenario";
+        MarketingText: Text;
+    begin
+        // 1. Check Marketing Text for embedded Base64 or extreme length
+        MarketingText := EntityText.GetText(Database::Item, Item.SystemId, EntityTextScenario::"Marketing Text");
+        if MarketingText <> '' then begin
+            if MarketingText.Contains('data:image/') or MarketingText.Contains(';base64,') then begin
+                ReasonText := StrSubstNo('Field [Marketing Text] contains embedded Base64 image (%1 chars). Please remove embedded image.', StrLen(MarketingText));
+                exit(false);
+            end;
+            if StrLen(MarketingText) > 65000 then begin
+                ReasonText := StrSubstNo('Field [Marketing Text] length (%1 chars) exceeds safe limit of 65,000 chars.', StrLen(MarketingText));
+                exit(false);
+            end;
+        end;
+
+        // 2. Check Picture count (> 10 images per item)
+        if Item.Picture.Count() > 10 then begin
+            ReasonText := StrSubstNo('Field [Picture] has %1 images attached, exceeding safe batch limit of 10 images.', Item.Picture.Count());
+            exit(false);
+        end;
+
+        exit(true);
     end;
 }
