@@ -210,6 +210,8 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         ResponseText := QueryShopifyGraphQLDirectly(ShopCode, '__APSS_PING__');
         if (ResponseText = '') or (ResponseText = 'ERROR') then
             Error('Access Token obtained, but GraphQL query failed.\\Please check Admin API permissions (read_products).')
+        else if ResponseText.Contains('"errors"') and not ResponseText.Contains('"data"') then
+            Error('Shopify GraphQL Error:\\%1', ResponseText)
         else
             Message('Success! Shopify OAuth connection verified successfully.\\Auto-refreshing access token is active on %1.', ShopUrl);
     end;
@@ -637,6 +639,7 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         Token: Text;
         ShopUrl: Text;
         GraphQLUrl: Text;
+        CleanSKU: Text;
     begin
         if not ShopifyShop.Get(ShopCode) then
             exit('ERROR');
@@ -651,7 +654,8 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         if Token = '' then
             exit('ERROR');
 
-        GraphQLQuery := StrSubstNo('{ productVariants(first: 10, query: ''sku:"%1"'') { nodes { id sku product { id handle status } } } }', TargetSKU);
+        CleanSKU := TargetSKU.Trim().Replace('\', '\\').Replace('"', '\"');
+        GraphQLQuery := StrSubstNo('{ productVariants(first: 10, query: "sku:\"%1\"") { nodes { id sku product { id handle status } } } }', CleanSKU);
 
         JReqObj.Add('query', GraphQLQuery);
         JReqObj.WriteTo(ReqText);
