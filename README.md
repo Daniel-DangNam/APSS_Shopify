@@ -20,6 +20,7 @@ The primary purpose of this extension is to extend standard Business Central and
 ## 2. Implemented Features Summary
 
 ### Phase 1: Publishing Controls & Product Metafields
+
 - **APSS Approved Gate:** Items where `APSS Approved = false` (Field 50001, Boolean) are strictly excluded from both Add Items (new product creation) and Sync Products (existing product updates).
 - **Image Gate:** Items must have at least one image (`Picture.Count() > 0`). Missing images filter items out silently without creating error log noise.
 - **Shopify Readiness Validation:** Evaluates hard readiness: `APSS Approved`, `Picture`, `Brand`, `Description`, and `Base Unit of Measure`. Customer Item Reference is strictly excluded from hard readiness.
@@ -35,6 +36,7 @@ The primary purpose of this extension is to extend standard Business Central and
 - **Native SEO:** Automatically populates `ShopifyProduct."SEO Title"` (<= 70 chars) and `ShopifyProduct."SEO Description"` (plain text Marketing Text, <= 160 chars).
 
 ### Phase 2: Pricing Integration, Price Valid Until & Staging Infrastructure
+
 - **Unit Price Calculation Override (Quantity = 1.0):** Overrides standard Shopify Connector price calculation by forcing `Quantity = 1.0` on a temporary quote calculation. Evaluates minimum quantity thresholds on Sales Price lines and returns the true converted SGD price without overwriting by raw LCY price.
 - **Dual Pricing Engine Support:** Captures ending dates and best unit prices from both BC pricing engines:
   - **Legacy Pricing:** `Codeunit 7000 "Sales Price Calc. Mgt."` (event `OnAfterCalcBestUnitPrice`).
@@ -49,6 +51,7 @@ The primary purpose of this extension is to extend standard Business Central and
 - **Admin Diagnostic Logging (`Table 90305` & `Page 90305 APSS Diagnostic Logs`):** Retains operational diagnostic logs recording currency conversion, source prices, exchange rates, and errors for production troubleshooting.
 
 ### Phase 3: 4-Branch SKU Precheck, OAuth Token Management & Reconcile Log UI
+
 - **4-Branch SKU Precheck Logic (`Codeunit 90304 APSS Shopify SKU Precheck`):**
   - **Create:** SKU does not exist on Shopify $\rightarrow$ Item proceeds to product creation.
   - **Update:** SKU exists on Shopify and is mapped correctly to the current BC item $\rightarrow$ Item proceeds to update.
@@ -141,18 +144,22 @@ APSS_Shopify/
 ## 5. Build & Deployment Instructions
 
 ### Prerequisites
+
 - Microsoft Dynamics 365 Business Central (BC 28 or compatible sandbox environment)
 - Standard Microsoft Shopify Connector (`Microsoft.Integration.Shopify`)
 - AL Language Extension for Visual Studio Code (`v17`)
 - Downloaded package dependencies in `.alpackages/` (`System`, `Base Application`, `Microsoft Shopify Connector`)
 
 ### Build Command
+
 Compile the extension package using Microsoft AL Compiler (`alc.exe`):
+
 ```cmd
-alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enhancements_1.0.0.13.app"
+alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enhancements_1.0.0.14.app"
 ```
 
 ### Deployment Configuration (`launch.json`)
+
 ```json
 {
   "environmentType": "Sandbox",
@@ -175,15 +182,15 @@ For full architectural breakdown, execution trace logs, historical and current E
 
 ## 7. Project Status
 
-| Milestone | Status |
-| :--- | :--- |
-| **Phase 1 Implementation & Verification** | **PASS** |
-| **Phase 2 Pricing & Staging Implementation** | **PASS** |
-| **Phase 2 Metafield (`price_valid_until`)** | **PASS** |
-| **Phase 3 SKU Precheck (4-Branch Flow)** | **PASS** (Create, Update, Block Needs Reconciliation, Block Stale Mapping verified) |
-| **Phase 3 Dynamic OAuth Token Refresh** | **PASS** (Client Credentials flow, 24h token auto-refresh, IsolatedStorage security verified) |
-| **Phase 3 Reconcile Log UI & Bulk Actions** | **PASS** (Checkboxes, Select All, Deselect All, Mark as Resolved, Delete Selected verified) |
-| **Automated HTML Email Notification System** | **PASS** (Configurable setup, zero hardcoding, Success & Error HTML templates verified) |
-| **AL Code Compilation (`alc.exe`)** | **PASS** (`0` errors, `0` warnings, version `1.0.0.13`) |
-| **Kathy/June Requirement Refactor** | **Code Implemented** (Field mapping, Title anti-duplication, SEO, Inventory sync, Report 30106/30108 separation) |
-| **Production Deployment Status** | **Implementation in progress / Sandbox verification required / Not production-ready** |
+| Milestone                                    | Status                                                                                                           |
+| :------------------------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| **Phase 1 Implementation & Verification**    | **PASS**                                                                                                         |
+| **Phase 2 Pricing & Staging Implementation** | **PASS**                                                                                                         |
+| **Phase 2 Metafield (`price_valid_until`)**  | **PASS**                                                                                                         |
+| **Phase 3 SKU Precheck (4-Branch Flow)**     | **PASS** (Create, Update, Block Needs Reconciliation, Block Stale Mapping verified)                              |
+| **Phase 3 Dynamic OAuth Token Refresh**      | **PASS** (Client Credentials flow, 24h token auto-refresh, IsolatedStorage security verified)                    |
+| **Phase 3 Reconcile Log UI & Bulk Actions**  | **PASS** (Checkboxes, Select All, Deselect All, Mark as Resolved, Delete Selected verified)                      |
+| **Automated HTML Email Notification System** | **PASS** (Configurable setup, zero hardcoding, Success & Error HTML templates verified)                          |
+| **AL Code Compilation (`alc.exe`)**          | **PASS** (`0` errors, `0` warnings, version `1.0.0.14`)                                                          |
+| **Kathy/June Requirement Refactor**          | **Code Implemented** (Field mapping, Title anti-duplication, SEO, Inventory sync, Report 30106/30108 separation) |
+| **Production Deployment Status**             | **Implementation in progress / Sandbox verification required / Not production-ready**                            |
