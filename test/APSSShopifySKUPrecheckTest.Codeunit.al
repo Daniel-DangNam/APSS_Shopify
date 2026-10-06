@@ -197,6 +197,11 @@ codeunit 90305 "APSS Shpfy SKU Precheck Test"
     begin
         ReconcileLog.DeleteAll();
 
+        // Without event handled and without Token configured, direct production call returns ERROR -> LOOKUP_FAILED
+        Token := SKUPrecheck.GetShopifyAccessToken('NON_EXISTENT_SHOP');
+        AssertAreEqual('', Token, 'Token for non existent shop should be empty.');
+    end;
+
     [Test]
     procedure Test11_ApplyMappingsFromReconcileLog_ValidatesAndMapsCorrectly()
     var
