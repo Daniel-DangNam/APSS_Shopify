@@ -96,12 +96,18 @@ page 90302 "APSS Shpfy Readiness FactBox"
                 trigger OnAction()
                 begin
                     CalculateStats();
+                    CurrPage.Update(false);
                 end;
             }
         }
     }
 
     trigger OnOpenPage()
+    begin
+        CalculateStats();
+    end;
+
+    trigger OnAfterGetCurrRecord()
     begin
         CalculateStats();
     end;

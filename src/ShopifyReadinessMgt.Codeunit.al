@@ -96,14 +96,14 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
         else begin
             ShpfyVariant.SetRange("Item SystemId", Item.SystemId);
             if ShpfyVariant.FindFirst() then begin
-                if ShpfyProduct.Get(ShpfyVariant."Product Id") then
-                    HasProduct := true;
+                HasProduct := true;
+                if ShpfyProduct.Get(ShpfyVariant."Product Id") then;
             end else begin
                 ShpfyVariant.Reset();
                 ShpfyVariant.SetRange("Item No.", Item."No.");
                 if ShpfyVariant.FindFirst() then begin
-                    if ShpfyProduct.Get(ShpfyVariant."Product Id") then
-                        HasProduct := true;
+                    HasProduct := true;
+                    if ShpfyProduct.Get(ShpfyVariant."Product Id") then;
                 end;
             end;
         end;
