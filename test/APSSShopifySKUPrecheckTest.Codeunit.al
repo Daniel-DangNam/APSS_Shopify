@@ -214,6 +214,7 @@ codeunit 90305 "APSS Shpfy SKU Precheck Test"
         SKUPrecheck: Codeunit "APSS Shopify SKU Precheck";
         SuccessCount: Integer;
         FailedCount: Integer;
+        FailedDetails: Text;
     begin
         ReconcileLog.DeleteAll();
         if ShopifyShop.FindFirst() then begin
@@ -228,7 +229,7 @@ codeunit 90305 "APSS Shpfy SKU Precheck Test"
                 ReconcileLog.Selected := true;
                 ReconcileLog.Insert();
 
-                SKUPrecheck.ApplyMappingsFromReconcileLog(ReconcileLog, SuccessCount, FailedCount);
+                SKUPrecheck.ApplyMappingsFromReconcileLog(ReconcileLog, SuccessCount, FailedCount, FailedDetails);
                 AssertAreEqual(1, SuccessCount, 'Should successfully map 1 valid item.');
                 AssertIsTrue(ShopifyProduct.Get(9999901), 'Shpfy Product record should be created with correct Id.');
                 AssertIsTrue(ShopifyVariant.Get(9999902), 'Shpfy Variant record should be created with correct Id.');
