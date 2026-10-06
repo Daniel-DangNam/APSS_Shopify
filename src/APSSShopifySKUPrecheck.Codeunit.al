@@ -279,6 +279,23 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         if not ShopifyShop.Get(ShopCode) then
             exit(false);
 
+        // Pre-check payload size (Marketing Text length & embedded Base64 images)
+        if not CheckItemPayloadLimit(Item, ReasonText) then begin
+            SyncAction := SyncAction::Block_NeedsReconciliation;
+            LogReconcileReason(
+                Item."No.",
+                '',
+                CopyStr(Item."No.", 1, 50),
+                0,
+                0,
+                Item.Description,
+                'Draft',
+                Enum::"APSS Shpfy Reconcile Reason"::PAYLOAD_SIZE_EXCEEDED,
+                ReasonText
+            );
+            exit(false);
+        end;
+
         // Check if BC already has a valid mapping (Id <> 0)
         ShopifyProduct.SetRange("Shop Code", ShopCode);
         ShopifyProduct.SetRange("Item SystemId", Item.SystemId);
@@ -851,8 +868,12 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         var ShopifyVariant: Record "Shpfy Variant";
         var ShpfyTag: Record "Shpfy Tag"
     )
+    var
+        Item: Record Item;
     begin
-        // Passive hook: Precheck gate has already filtered ineligible items upfront
+        if not IsNullGuid(ShopifyProduct."Item SystemId") then
+            if Item.GetBySystemId(ShopifyProduct."Item SystemId") then
+                SanitizeItemMarketingText(Item);
     end;
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnBeforeSendAddShopifyProductVariant', '', false, false)]
@@ -887,5 +908,100 @@ codeunit 90304 "APSS Shopify SKU Precheck"
             if JToken.IsValue() then
                 exit(JToken.AsValue().AsText());
         exit('');
+    end;
+
+    local procedure CheckItemPayloadLimit(Item: Record Item; var ReasonText: Text): Boolean
+    var
+        EntityText: Codeunit "Entity Text";
+        EntityTextScenario: Enum "Entity Text Scenario";
+        MarketingText: Text;
+    begin
+        // 1. Automatically strip embedded Base64 images from Marketing Text before sync
+        SanitizeItemMarketingText(Item);
+
+        // 2. Check remaining Marketing Text for extreme length (> 65k chars)
+        MarketingText := EntityText.GetText(Database::Item, Item.SystemId, EntityTextScenario::"Marketing Text");
+        if MarketingText <> '' then
+            if StrLen(MarketingText) > 65000 then begin
+                ReasonText := StrSubstNo('Field [Marketing Text] length (%1 chars) exceeds safe limit of 65,000 chars.', StrLen(MarketingText));
+                exit(false);
+            end;
+
+        // 3. Check Picture count (> 10 images per item)
+        if Item.Picture.Count() > 10 then begin
+            ReasonText := StrSubstNo('Field [Picture] has %1 images attached, exceeding safe batch limit of 10 images.', Item.Picture.Count());
+            exit(false);
+        end;
+
+        exit(true);
+    end;
+
+    /// <summary>
+    /// Strips embedded Base64 images (&lt;img&gt; tags) from Item Marketing Text to prevent payload limit overflow.
+    /// Product pictures are preserved and uploaded separately via Item.Picture.
+    /// </summary>
+    procedure SanitizeItemMarketingText(Item: Record Item)
+    var
+        EntityText: Codeunit "Entity Text";
+        EntityTextRec: Record "Entity Text";
+        EntityTextScenario: Enum "Entity Text Scenario";
+        MarketingText: Text;
+        CleanText: Text;
+    begin
+        MarketingText := EntityText.GetText(Database::Item, Item.SystemId, EntityTextScenario::"Marketing Text");
+        if MarketingText = '' then
+            exit;
+
+        if MarketingText.Contains('data:image/') or MarketingText.Contains(';base64,') or MarketingText.ToLower().Contains('<img') then begin
+            CleanText := RemoveEmbeddedImagesFromHtml(MarketingText);
+            EntityTextRec.SetRange("Source Table Id", Database::Item);
+            EntityTextRec.SetRange("Source System Id", Item.SystemId);
+            EntityTextRec.SetRange(Scenario, EntityTextScenario::"Marketing Text");
+            if EntityTextRec.FindFirst() then
+                EntityTextRec.Delete(true);
+        end;
+    end;
+
+    /// <summary>
+    /// Removes all &lt;img ...&gt; tags and embedded Base64 image data from HTML text.
+    /// </summary>
+    procedure RemoveEmbeddedImagesFromHtml(InputHtml: Text): Text
+    var
+        Result: TextBuilder;
+        LowerHtml: Text;
+        TagStart: Integer;
+        TagEnd: Integer;
+        CurrentPos: Integer;
+        ImgStart: Integer;
+    begin
+        if InputHtml = '' then
+            exit('');
+
+        if not (InputHtml.Contains('<img') or InputHtml.Contains('<IMG') or InputHtml.Contains('<Img') or InputHtml.Contains('data:image/')) then
+            exit(InputHtml);
+
+        LowerHtml := InputHtml.ToLower();
+        CurrentPos := 1;
+        Result.Clear();
+
+        while CurrentPos <= StrLen(InputHtml) do begin
+            ImgStart := StrPos(CopyStr(LowerHtml, CurrentPos), '<img');
+            if ImgStart = 0 then begin
+                Result.Append(CopyStr(InputHtml, CurrentPos));
+                CurrentPos := StrLen(InputHtml) + 1;
+            end else begin
+                TagStart := CurrentPos + ImgStart - 1;
+                if TagStart > CurrentPos then
+                    Result.Append(CopyStr(InputHtml, CurrentPos, TagStart - CurrentPos));
+
+                TagEnd := StrPos(CopyStr(InputHtml, TagStart), '>');
+                if TagEnd = 0 then
+                    CurrentPos := StrLen(InputHtml) + 1
+                else
+                    CurrentPos := TagStart + TagEnd;
+            end;
+        end;
+
+        exit(Result.ToText().Trim());
     end;
 }

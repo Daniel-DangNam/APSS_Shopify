@@ -24,4 +24,8 @@ enum 90301 "APSS Shpfy Reconcile Reason"
     {
         Caption = 'Stale Mapping';
     }
+    value(5; PAYLOAD_SIZE_EXCEEDED)
+    {
+        Caption = 'Payload Size Exceeded';
+    }
 }
