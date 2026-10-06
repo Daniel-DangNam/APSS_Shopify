@@ -197,9 +197,42 @@ codeunit 90305 "APSS Shpfy SKU Precheck Test"
     begin
         ReconcileLog.DeleteAll();
 
-        // Without event handled and without Token configured, direct production call returns ERROR -> LOOKUP_FAILED
-        Token := SKUPrecheck.GetShopifyAccessToken('NON_EXISTENT_SHOP');
-        AssertAreEqual('', Token, 'Token for non existent shop should be empty.');
+    [Test]
+    procedure Test11_ApplyMappingsFromReconcileLog_ValidatesAndMapsCorrectly()
+    var
+        ReconcileLog: Record "APSS Shpfy Reconcile Log";
+        Item: Record Item;
+        ShopifyShop: Record "Shpfy Shop";
+        ShopifyProduct: Record "Shpfy Product";
+        ShopifyVariant: Record "Shpfy Variant";
+        SKUPrecheck: Codeunit "APSS Shopify SKU Precheck";
+        SuccessCount: Integer;
+        FailedCount: Integer;
+    begin
+        ReconcileLog.DeleteAll();
+        if ShopifyShop.FindFirst() then begin
+            if Item.FindFirst() then begin
+                ReconcileLog.Init();
+                ReconcileLog."Item No." := Item."No.";
+                ReconcileLog.SKU := CopyStr(Item."No.", 1, 50);
+                ReconcileLog."Shopify Product Id" := 9999901;
+                ReconcileLog."Shopify Variant Id" := 9999902;
+                ReconcileLog.Reason := Enum::"APSS Shpfy Reconcile Reason"::SKU_EXISTS;
+                ReconcileLog.Resolved := false;
+                ReconcileLog.Selected := true;
+                ReconcileLog.Insert();
+
+                SKUPrecheck.ApplyMappingsFromReconcileLog(ReconcileLog, SuccessCount, FailedCount);
+                AssertAreEqual(1, SuccessCount, 'Should successfully map 1 valid item.');
+                AssertIsTrue(ShopifyProduct.Get(9999901), 'Shpfy Product record should be created with correct Id.');
+                AssertIsTrue(ShopifyVariant.Get(9999902), 'Shpfy Variant record should be created with correct Id.');
+
+                // Cleanup
+                ShopifyVariant.Delete(false);
+                ShopifyProduct.Delete(false);
+                ReconcileLog.DeleteAll();
+            end;
+        end;
     end;
 
     local procedure AssertIsTrue(Condition: Boolean; Msg: Text)

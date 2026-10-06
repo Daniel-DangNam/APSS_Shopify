@@ -151,6 +151,37 @@ page 90303 "APSS Shpfy Reconcile Log"
                     CurrPage.Update(false);
                 end;
             }
+            action(ApplyMappingsFromLog)
+            {
+                ApplicationArea = All;
+                Caption = 'Apply Mappings from Log';
+                Image = Link;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedIsBig = true;
+                ToolTip = 'Applies validated Shopify Product ID and Variant mappings for selected log entries without downloading unmapped store catalog items.';
+
+                trigger OnAction()
+                var
+                    SelectedLog: Record "APSS Shpfy Reconcile Log";
+                    SKUPrecheck: Codeunit "APSS Shopify SKU Precheck";
+                    SuccessCount: Integer;
+                    FailedCount: Integer;
+                begin
+                    SelectedLog.SetRange(Selected, true);
+                    if SelectedLog.IsEmpty() then
+                        CurrPage.SetSelectionFilter(SelectedLog);
+
+                    if SelectedLog.IsEmpty() then begin
+                        Message('Please select at least one log entry to apply mapping.');
+                        exit;
+                    end;
+
+                    SKUPrecheck.ApplyMappingsFromReconcileLog(SelectedLog, SuccessCount, FailedCount);
+                    Message('Mapping applied: %1 succeeded, %2 skipped/failed.', SuccessCount, FailedCount);
+                    CurrPage.Update(false);
+                end;
+            }
             action(MarkAsResolved)
             {
                 ApplicationArea = All;
