@@ -167,6 +167,7 @@ page 90303 "APSS Shpfy Reconcile Log"
                     SKUPrecheck: Codeunit "APSS Shopify SKU Precheck";
                     SuccessCount: Integer;
                     FailedCount: Integer;
+                    FailedDetails: Text;
                 begin
                     SelectedLog.SetRange(Selected, true);
                     if SelectedLog.IsEmpty() then
@@ -177,8 +178,11 @@ page 90303 "APSS Shpfy Reconcile Log"
                         exit;
                     end;
 
-                    SKUPrecheck.ApplyMappingsFromReconcileLog(SelectedLog, SuccessCount, FailedCount);
-                    Message('Mapping applied: %1 succeeded, %2 skipped/failed.', SuccessCount, FailedCount);
+                    SKUPrecheck.ApplyMappingsFromReconcileLog(SelectedLog, SuccessCount, FailedCount, FailedDetails);
+                    if FailedCount > 0 then
+                        Message('Mapping applied: %1 succeeded, %2 skipped/failed.\\Skipped items details:\%3', SuccessCount, FailedCount, FailedDetails)
+                    else
+                        Message('Mapping applied: %1 succeeded.', SuccessCount);
                     CurrPage.Update(false);
                 end;
             }

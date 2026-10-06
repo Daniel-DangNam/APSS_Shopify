@@ -1005,7 +1005,7 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         exit(Result.ToText().Trim());
     end;
 
-    procedure ApplyMappingsFromReconcileLog(var SelectedLog: Record "APSS Shpfy Reconcile Log"; var SuccessCount: Integer; var FailedCount: Integer)
+    procedure ApplyMappingsFromReconcileLog(var SelectedLog: Record "APSS Shpfy Reconcile Log"; var SuccessCount: Integer; var FailedCount: Integer; var FailedDetails: Text)
     var
         LogRec: Record "APSS Shpfy Reconcile Log";
         Item: Record Item;
@@ -1014,12 +1014,14 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         ShopifyVariant: Record "Shpfy Variant";
         ExistingShpfyProduct: Record "Shpfy Product";
         ProductTitleCU: Codeunit "APSS Shopify Product Title";
+        FailedBuilder: TextBuilder;
         ShopCode: Code[20];
         BrandName: Text;
         ShopUrl: Text;
     begin
         SuccessCount := 0;
         FailedCount := 0;
+        FailedDetails := '';
 
         if not ShopifyShop.FindFirst() then
             exit;
@@ -1029,20 +1031,24 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         LogRec.Copy(SelectedLog);
         if LogRec.FindSet(true) then
             repeat
-                if LogRec.Reason = Enum::"APSS Shpfy Reconcile Reason"::DUPLICATE_SKU_IN_PRODUCT then
-                    FailedCount += 1
-                else if (LogRec."Shopify Product Id" = 0) or (LogRec."Item No." = '') then
-                    FailedCount += 1
-                else if not Item.Get(LogRec."Item No.") then
-                    FailedCount += 1
-                else begin
+                if LogRec.Reason = Enum::"APSS Shpfy Reconcile Reason"::DUPLICATE_SKU_IN_PRODUCT then begin
+                    FailedCount += 1;
+                    AppendFailedItem(FailedBuilder, LogRec."Item No.", 'Duplicate SKU in Product');
+                end else if (LogRec."Shopify Product Id" = 0) or (LogRec."Item No." = '') then begin
+                    FailedCount += 1;
+                    AppendFailedItem(FailedBuilder, LogRec."Item No.", 'Missing Product ID / Item No.');
+                end else if not Item.Get(LogRec."Item No.") then begin
+                    FailedCount += 1;
+                    AppendFailedItem(FailedBuilder, LogRec."Item No.", 'Item does not exist in BC');
+                end else begin
                     PurgeGhostRecordsForItem(ShopCode, Item.SystemId);
 
                     ExistingShpfyProduct.SetRange("Item SystemId", Item.SystemId);
                     ExistingShpfyProduct.SetFilter(Id, '<>0&<>%1', LogRec."Shopify Product Id");
-                    if not ExistingShpfyProduct.IsEmpty() then
-                        FailedCount += 1
-                    else begin
+                    if not ExistingShpfyProduct.IsEmpty() then begin
+                        FailedCount += 1;
+                        AppendFailedItem(FailedBuilder, LogRec."Item No.", 'Already mapped to another Product ID');
+                    end else begin
                         BrandName := ProductTitleCU.GetBrandName(Item);
                         if not ShopifyProduct.Get(LogRec."Shopify Product Id") then begin
                             ShopifyProduct.Init();
@@ -1114,6 +1120,18 @@ codeunit 90304 "APSS Shopify SKU Precheck"
                     end;
                 end;
             until LogRec.Next() = 0;
+
+        FailedDetails := FailedBuilder.ToText();
+    end;
+
+    local procedure AppendFailedItem(var Builder: TextBuilder; ItemNo: Code[20]; ReasonText: Text)
+    begin
+        if Builder.Length() > 0 then
+            Builder.Append('; ');
+        if ItemNo <> '' then
+            Builder.Append(ItemNo + ': ' + ReasonText)
+        else
+            Builder.Append(ReasonText);
     end;
 }
 
