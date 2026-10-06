@@ -1013,7 +1013,10 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         ShopifyProduct: Record "Shpfy Product";
         ShopifyVariant: Record "Shpfy Variant";
         ExistingShpfyProduct: Record "Shpfy Product";
+        ProductTitleCU: Codeunit "APSS Shopify Product Title";
         ShopCode: Code[20];
+        BrandName: Text;
+        ShopUrl: Text;
     begin
         SuccessCount := 0;
         FailedCount := 0;
@@ -1021,6 +1024,7 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         if not ShopifyShop.FindFirst() then
             exit;
         ShopCode := ShopifyShop.Code;
+        ShopUrl := GetShopUrl(ShopifyShop);
 
         LogRec.Copy(SelectedLog);
         if LogRec.FindSet(true) then
@@ -1039,6 +1043,7 @@ codeunit 90304 "APSS Shopify SKU Precheck"
                     if not ExistingShpfyProduct.IsEmpty() then
                         FailedCount += 1
                     else begin
+                        BrandName := ProductTitleCU.GetBrandName(Item);
                         if not ShopifyProduct.Get(LogRec."Shopify Product Id") then begin
                             ShopifyProduct.Init();
                             ShopifyProduct.Id := LogRec."Shopify Product Id";
@@ -1048,10 +1053,37 @@ codeunit 90304 "APSS Shopify SKU Precheck"
                                 ShopifyProduct.Title := CopyStr(LogRec."Shopify Handle", 1, MaxStrLen(ShopifyProduct.Title))
                             else
                                 ShopifyProduct.Title := CopyStr(Item.Description, 1, MaxStrLen(ShopifyProduct.Title));
+                            if BrandName <> '' then
+                                ShopifyProduct.Vendor := CopyStr(BrandName, 1, MaxStrLen(ShopifyProduct.Vendor));
+                            if Item."Item Category Code" <> '' then
+                                ShopifyProduct."Product Type" := CopyStr(Item."Item Category Code", 1, MaxStrLen(ShopifyProduct."Product Type"));
+                            ShopifyProduct."SEO Title" := CopyStr(ShopifyProduct.Title, 1, 70);
+                            ShopifyProduct."SEO Description" := CopyStr(Item.Description, 1, 160);
+                            ShopifyProduct."Created At" := CurrentDateTime;
+                            ShopifyProduct."Updated At" := CurrentDateTime;
+                            if (ShopUrl <> '') and (LogRec."Shopify Handle" <> '') then
+                                ShopifyProduct.URL := CopyStr(ShopUrl + '/products/' + LogRec."Shopify Handle", 1, MaxStrLen(ShopifyProduct.URL));
                             ShopifyProduct.Insert(false);
                         end else begin
                             ShopifyProduct."Item SystemId" := Item.SystemId;
                             ShopifyProduct."Shop Code" := ShopCode;
+                            if ShopifyProduct.Title = '' then begin
+                                if LogRec."Shopify Handle" <> '' then
+                                    ShopifyProduct.Title := CopyStr(LogRec."Shopify Handle", 1, MaxStrLen(ShopifyProduct.Title))
+                                else
+                                    ShopifyProduct.Title := CopyStr(Item.Description, 1, MaxStrLen(ShopifyProduct.Title));
+                            end;
+                            if (ShopifyProduct.Vendor = '') and (BrandName <> '') then
+                                ShopifyProduct.Vendor := CopyStr(BrandName, 1, MaxStrLen(ShopifyProduct.Vendor));
+                            if (ShopifyProduct."Product Type" = '') and (Item."Item Category Code" <> '') then
+                                ShopifyProduct."Product Type" := CopyStr(Item."Item Category Code", 1, MaxStrLen(ShopifyProduct."Product Type"));
+                            if ShopifyProduct."SEO Title" = '' then
+                                ShopifyProduct."SEO Title" := CopyStr(ShopifyProduct.Title, 1, 70);
+                            if ShopifyProduct."SEO Description" = '' then
+                                ShopifyProduct."SEO Description" := CopyStr(Item.Description, 1, 160);
+                            ShopifyProduct."Updated At" := CurrentDateTime;
+                            if (ShopifyProduct.URL = '') and (ShopUrl <> '') and (LogRec."Shopify Handle" <> '') then
+                                ShopifyProduct.URL := CopyStr(ShopUrl + '/products/' + LogRec."Shopify Handle", 1, MaxStrLen(ShopifyProduct.URL));
                             ShopifyProduct.Modify(false);
                         end;
 
