@@ -230,6 +230,17 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     end;
                 end;
             }
+            action("Shopify Reconcile Log")
+            {
+                ApplicationArea = All;
+                Caption = 'Shopify Reconcile Log';
+                Image = Log;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedIsBig = true;
+                RunObject = Page "APSS Shpfy Reconcile Log";
+                ToolTip = 'Opens the Shopify Reconcile Log showing blocked SKU exports and orphaned mappings.';
+            }
             action("Purge Incomplete Shopify Records")
             {
                 ApplicationArea = All;
@@ -274,18 +285,6 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     end else
                         Error('No Shopify Shop found.');
                 end;
-            }
-            action("Shopify Reconcile Log")
-            {
-                ApplicationArea = All;
-                Caption = 'Shopify Reconcile Log';
-                Image = Log;
-                Promoted = true;
-                PromotedCategory = Process;
-                PromotedIsBig = true;
-                PromotedOnly = true;
-                RunObject = Page "APSS Shpfy Reconcile Log";
-                ToolTip = 'Opens the Shopify Reconcile Log showing blocked SKU exports and orphaned mappings.';
             }
         }
     }
