@@ -89,12 +89,26 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
             exit(Enum::"APSS Shopify Item Sync Status"::"Needs Reconciliation");
 
         ShpfyProduct.SetRange("Item SystemId", Item.SystemId);
-        ShpfyProduct.SetFilter(Id, '<>0');
-        if ShopifyShop.FindFirst() then
+        if ShopifyShop.FindFirst() then begin
             ShpfyProduct.SetRange("Shop Code", ShopifyShop.Code);
-
-        if not ShpfyProduct.FindFirst() then
-            exit(Enum::"APSS Shopify Item Sync Status"::"New Ready");
+            ShpfyProduct.SetFilter(Id, '<>0');
+            if not ShpfyProduct.FindFirst() then begin
+                ShpfyProduct.SetRange("Shop Code");
+                ShpfyProduct.SetFilter(Id, '<>0');
+                if not ShpfyProduct.FindFirst() then begin
+                    ShpfyProduct.SetRange(Id);
+                    if not ShpfyProduct.FindFirst() then
+                        exit(Enum::"APSS Shopify Item Sync Status"::"New Ready");
+                end;
+            end;
+        end else begin
+            ShpfyProduct.SetFilter(Id, '<>0');
+            if not ShpfyProduct.FindFirst() then begin
+                ShpfyProduct.SetRange(Id);
+                if not ShpfyProduct.FindFirst() then
+                    exit(Enum::"APSS Shopify Item Sync Status"::"New Ready");
+            end;
+        end;
 
         if Item.SystemModifiedAt > ShpfyProduct.SystemModifiedAt then
             exit(Enum::"APSS Shopify Item Sync Status"::"Modified Ready");
