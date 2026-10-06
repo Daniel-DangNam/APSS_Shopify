@@ -1032,8 +1032,10 @@ codeunit 90304 "APSS Shopify SKU Precheck"
                 else if not Item.Get(LogRec."Item No.") then
                     FailedCount += 1
                 else begin
+                    PurgeGhostRecordsForItem(ShopCode, Item.SystemId);
+
                     ExistingShpfyProduct.SetRange("Item SystemId", Item.SystemId);
-                    ExistingShpfyProduct.SetFilter(Id, '<>%1', LogRec."Shopify Product Id");
+                    ExistingShpfyProduct.SetFilter(Id, '<>0&<>%1', LogRec."Shopify Product Id");
                     if not ExistingShpfyProduct.IsEmpty() then
                         FailedCount += 1
                     else begin
