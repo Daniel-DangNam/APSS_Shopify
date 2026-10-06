@@ -1004,4 +1004,84 @@ codeunit 90304 "APSS Shopify SKU Precheck"
 
         exit(Result.ToText().Trim());
     end;
+
+    procedure ApplyMappingsFromReconcileLog(var SelectedLog: Record "APSS Shpfy Reconcile Log"; var SuccessCount: Integer; var FailedCount: Integer)
+    var
+        LogRec: Record "APSS Shpfy Reconcile Log";
+        Item: Record Item;
+        ShopifyShop: Record "Shpfy Shop";
+        ShopifyProduct: Record "Shpfy Product";
+        ShopifyVariant: Record "Shpfy Variant";
+        ExistingShpfyProduct: Record "Shpfy Product";
+        ShopCode: Code[20];
+    begin
+        SuccessCount := 0;
+        FailedCount := 0;
+
+        if not ShopifyShop.FindFirst() then
+            exit;
+        ShopCode := ShopifyShop.Code;
+
+        LogRec.Copy(SelectedLog);
+        if LogRec.FindSet(true) then
+            repeat
+                if LogRec.Reason = Enum::"APSS Shpfy Reconcile Reason"::DUPLICATE_SKU_IN_PRODUCT then
+                    FailedCount += 1
+                else if (LogRec."Shopify Product Id" = 0) or (LogRec."Item No." = '') then
+                    FailedCount += 1
+                else if not Item.Get(LogRec."Item No.") then
+                    FailedCount += 1
+                else begin
+                    PurgeGhostRecordsForItem(ShopCode, Item.SystemId);
+
+                    ExistingShpfyProduct.SetRange("Item SystemId", Item.SystemId);
+                    ExistingShpfyProduct.SetFilter(Id, '<>0&<>%1', LogRec."Shopify Product Id");
+                    if not ExistingShpfyProduct.IsEmpty() then
+                        FailedCount += 1
+                    else begin
+                        if not ShopifyProduct.Get(LogRec."Shopify Product Id") then begin
+                            ShopifyProduct.Init();
+                            ShopifyProduct.Id := LogRec."Shopify Product Id";
+                            ShopifyProduct."Shop Code" := ShopCode;
+                            ShopifyProduct."Item SystemId" := Item.SystemId;
+                            if LogRec."Shopify Handle" <> '' then
+                                ShopifyProduct.Title := CopyStr(LogRec."Shopify Handle", 1, MaxStrLen(ShopifyProduct.Title))
+                            else
+                                ShopifyProduct.Title := CopyStr(Item.Description, 1, MaxStrLen(ShopifyProduct.Title));
+                            ShopifyProduct.Insert(false);
+                        end else begin
+                            ShopifyProduct."Item SystemId" := Item.SystemId;
+                            ShopifyProduct."Shop Code" := ShopCode;
+                            ShopifyProduct.Modify(false);
+                        end;
+
+                        if LogRec."Shopify Variant Id" <> 0 then begin
+                            if not ShopifyVariant.Get(LogRec."Shopify Variant Id") then begin
+                                ShopifyVariant.Init();
+                                ShopifyVariant.Id := LogRec."Shopify Variant Id";
+                                ShopifyVariant."Product Id" := LogRec."Shopify Product Id";
+                                ShopifyVariant."Shop Code" := ShopCode;
+                                ShopifyVariant."Item SystemId" := Item.SystemId;
+                                ShopifyVariant."Item No." := Item."No.";
+                                ShopifyVariant.SKU := CopyStr(LogRec.SKU, 1, MaxStrLen(ShopifyVariant.SKU));
+                                ShopifyVariant.Insert(false);
+                            end else begin
+                                ShopifyVariant."Product Id" := LogRec."Shopify Product Id";
+                                ShopifyVariant."Shop Code" := ShopCode;
+                                ShopifyVariant."Item SystemId" := Item.SystemId;
+                                ShopifyVariant."Item No." := Item."No.";
+                                ShopifyVariant.SKU := CopyStr(LogRec.SKU, 1, MaxStrLen(ShopifyVariant.SKU));
+                                ShopifyVariant.Modify(false);
+                            end;
+                        end;
+
+                        LogRec.Resolved := true;
+                        LogRec.Selected := false;
+                        LogRec.Modify(false);
+                        SuccessCount += 1;
+                    end;
+                end;
+            until LogRec.Next() = 0;
+    end;
 }
+

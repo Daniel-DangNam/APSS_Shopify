@@ -5,7 +5,8 @@ permissionset 90300 "APSS SHOPIFY ENH"
 
     Permissions =
         tabledata Item = RM,
-        tabledata "Shpfy Product" = R,
+        tabledata "Shpfy Product" = RIMD,
+        tabledata "Shpfy Variant" = RIMD,
         tabledata "Shpfy Metafield" = RIMD,
         tabledata "APSS Diagnostic Log" = RIMD,
         tabledata "APSS Item Price Ending Date" = RIMD,

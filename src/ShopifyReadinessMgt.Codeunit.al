@@ -76,8 +76,10 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
     procedure GetItemSyncStatus(var Item: Record Item): Enum "APSS Shopify Item Sync Status"
     var
         ShpfyProduct: Record "Shpfy Product";
+        ShpfyVariant: Record "Shpfy Variant";
         ShopifyShop: Record "Shpfy Shop";
         ReconcileLog: Record "APSS Shpfy Reconcile Log";
+        HasProduct: Boolean;
     begin
         if not IsItemReady(Item) then
             exit(Enum::"APSS Shopify Item Sync Status"::"Not Ready");
@@ -89,26 +91,25 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
             exit(Enum::"APSS Shopify Item Sync Status"::"Needs Reconciliation");
 
         ShpfyProduct.SetRange("Item SystemId", Item.SystemId);
-        if ShopifyShop.FindFirst() then begin
-            ShpfyProduct.SetRange("Shop Code", ShopifyShop.Code);
-            ShpfyProduct.SetFilter(Id, '<>0');
-            if not ShpfyProduct.FindFirst() then begin
-                ShpfyProduct.SetRange("Shop Code");
-                ShpfyProduct.SetFilter(Id, '<>0');
-                if not ShpfyProduct.FindFirst() then begin
-                    ShpfyProduct.SetRange(Id);
-                    if not ShpfyProduct.FindFirst() then
-                        exit(Enum::"APSS Shopify Item Sync Status"::"New Ready");
+        if ShpfyProduct.FindFirst() then
+            HasProduct := true
+        else begin
+            ShpfyVariant.SetRange("Item SystemId", Item.SystemId);
+            if ShpfyVariant.FindFirst() then begin
+                HasProduct := true;
+                if ShpfyProduct.Get(ShpfyVariant."Product Id") then;
+            end else begin
+                ShpfyVariant.Reset();
+                ShpfyVariant.SetRange("Item No.", Item."No.");
+                if ShpfyVariant.FindFirst() then begin
+                    HasProduct := true;
+                    if ShpfyProduct.Get(ShpfyVariant."Product Id") then;
                 end;
             end;
-        end else begin
-            ShpfyProduct.SetFilter(Id, '<>0');
-            if not ShpfyProduct.FindFirst() then begin
-                ShpfyProduct.SetRange(Id);
-                if not ShpfyProduct.FindFirst() then
-                    exit(Enum::"APSS Shopify Item Sync Status"::"New Ready");
-            end;
         end;
+
+        if not HasProduct then
+            exit(Enum::"APSS Shopify Item Sync Status"::"New Ready");
 
         if Item.SystemModifiedAt > ShpfyProduct.SystemModifiedAt then
             exit(Enum::"APSS Shopify Item Sync Status"::"Modified Ready");
