@@ -92,7 +92,7 @@ codeunit 90303 "APSS Shopify Email Mgt."
                 end else begin
                     FailedCount += 1;
                     StatusBadgeHtml := '<span style="background-color: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">FAILED</span>';
-                    ItemDetailsHtml := '<span style="color: #dc2626; font-size: 12px; font-weight: 600;">Chưa sync được (Lỗi API Shopify - Xem chi tiết tại Shopify Log Entries)</span>';
+                    ItemDetailsHtml := '<span style="color: #dc2626; font-size: 12px; font-weight: 600;">Not synced (Check Shopify Reconcile Log for details)</span>';
                 end;
 
                 TableRowsBuilder.Append('<tr>');
