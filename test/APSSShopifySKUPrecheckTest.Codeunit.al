@@ -2,6 +2,7 @@ namespace APSS.Shopify.Test;
 
 using APSS.Shopify;
 using Microsoft.Integration.Shopify;
+using Microsoft.Inventory.Item;
 
 codeunit 90305 "APSS Shpfy SKU Precheck Test"
 {
