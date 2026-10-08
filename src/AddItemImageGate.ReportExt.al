@@ -8,6 +8,7 @@ reportextension 90300 "APSS Add Item Image Gate" extends "Shpfy Add Item to Shop
             var
                 CandidateItem: Record Item;
                 ProductTitleCU: Codeunit "APSS Shopify Product Title";
+                SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
                 FilterBuilder: TextBuilder;
                 IsEligible: Boolean;
             begin
@@ -17,6 +18,7 @@ reportextension 90300 "APSS Add Item Image Gate" extends "Shpfy Add Item to Shop
                 // Evaluate candidate items: APSS Approved = true AND Picture.Count() > 0 AND Required Master Data
                 if CandidateItem.FindSet() then begin
                     repeat
+                        SKUPrecheckCU.SanitizeItemMarketingText(CandidateItem);
                         IsEligible := ProductTitleCU.IsItemApproved(CandidateItem) and
                                       (CandidateItem.Picture.Count() > 0) and
                                       (ProductTitleCU.GetBrandName(CandidateItem) <> '') and
@@ -37,6 +39,15 @@ reportextension 90300 "APSS Add Item Image Gate" extends "Shpfy Add Item to Shop
                     Item.SetFilter("No.", FilterBuilder.ToText())
                 else
                     Item.SetFilter("No.", '%1', 'APSS_NO_IMAGE_MATCH'); // Guaranteed no-match
+
+                Commit();
+            end;
+
+            trigger OnBeforeAfterGetRecord()
+            var
+                SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
+            begin
+                SKUPrecheckCU.SanitizeItemMarketingText(Item);
             end;
         }
     }

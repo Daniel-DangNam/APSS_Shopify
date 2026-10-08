@@ -106,6 +106,7 @@ codeunit 90302 "APSS Shopify Sync Events"
             repeat
                 if not IsNullGuid(ProductLoop."Item SystemId") then
                     if Item.GetBySystemId(ProductLoop."Item SystemId") then begin
+                        SKUPrecheckCU.SanitizeItemMarketingText(Item);
                         IsEligible := SKUPrecheckCU.EvaluateItemSyncEligibility(Shop.Code, Item, BatchSKUsList, SyncAction, ReasonText);
 
                         if IsEligible and ProductTitleCU.IsItemApproved(Item) and (Item.Picture.Count() > 0) then begin
@@ -139,6 +140,7 @@ codeunit 90302 "APSS Shopify Sync Events"
     )
     var
         ShpfyUpdatePriceSource: Codeunit "Shpfy Update Price Source";
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
         CalcUnitCost: Decimal;
         CalcPrice: Decimal;
         CalcComparePrice: Decimal;
@@ -146,6 +148,8 @@ codeunit 90302 "APSS Shopify Sync Events"
         PriceSourceBound: Boolean;
         ErrText: Text;
     begin
+        SKUPrecheckCU.SanitizeItemMarketingText(Item);
+
         if Handled then begin
             LogDiag('CalculateUnitPrice:AlreadyHandled', Item."No.", ShopifyShop.Code, true, false, Price, 0D, '', StrSubstNo('Handled was true on entry, SessionId=%1', SessionId()));
             exit;
@@ -520,9 +524,12 @@ codeunit 90302 "APSS Shopify Sync Events"
     var
         EntityText: Codeunit "Entity Text";
         EntityTextScenario: Enum "Entity Text Scenario";
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
         MarketingText: Text;
         CleanText: Text;
     begin
+        SKUPrecheckCU.SanitizeItemMarketingText(Item);
+
         // Native Shopify SEO Title (max 70 chars)
         if ShopifyProduct.Title <> '' then
             ShopifyProduct."SEO Title" := CopyStr(ShopifyProduct.Title, 1, 70);
@@ -536,6 +543,95 @@ codeunit 90302 "APSS Shopify Sync Events"
             ShopifyProduct."SEO Description" := CopyStr(CleanText, 1, 160);
         end else if Item.Description <> '' then
             ShopifyProduct."SEO Description" := CopyStr(Item.Description, 1, 160);
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnAfterCreateProductBodyHtml', '', false, false)]
+    local procedure CleanProductBodyHtmlForShopify(ItemNo: Code[20]; ShopifyShop: Record "Shpfy Shop"; var ProductBodyHtml: Text; LanguageCode: Code[10])
+    var
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
+        Item: Record Item;
+    begin
+        if Item.Get(ItemNo) then
+            SKUPrecheckCU.SanitizeItemMarketingText(Item);
+
+        ProductBodyHtml := SKUPrecheckCU.CleanMarketingHtmlForGraphQL(ProductBodyHtml);
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnBeforeSendUpdateShopifyProduct', '', false, false)]
+    local procedure CleanOnBeforeSendUpdateShopifyProduct(ShopifyShop: Record "Shpfy Shop"; var ShopifyProduct: Record "Shpfy Product"; xShopifyProduct: Record "Shpfy Product")
+    var
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
+        Item: Record Item;
+        CurrentDescHtml: Text;
+        CleanDescHtml: Text;
+    begin
+        if not IsNullGuid(ShopifyProduct."Item SystemId") then
+            if Item.GetBySystemId(ShopifyProduct."Item SystemId") then
+                SKUPrecheckCU.SanitizeItemMarketingText(Item);
+
+        CurrentDescHtml := GetProductDescriptionHtml(ShopifyProduct);
+        if CurrentDescHtml <> '' then begin
+            CleanDescHtml := SKUPrecheckCU.CleanMarketingHtmlForGraphQL(CurrentDescHtml);
+            if CleanDescHtml <> CurrentDescHtml then
+                SetProductDescriptionHtml(ShopifyProduct, CleanDescHtml);
+        end;
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnBeforeSendCreateShopifyProduct', '', false, false)]
+    local procedure CleanOnBeforeSendCreateShopifyProduct(ShopifyShop: Record "Shpfy Shop"; var ShopifyProduct: Record "Shpfy Product"; var ShopifyVariant: Record "Shpfy Variant"; var ShpfyTag: Record "Shpfy Tag")
+    var
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
+        Item: Record Item;
+        CurrentDescHtml: Text;
+        CleanDescHtml: Text;
+    begin
+        if not IsNullGuid(ShopifyProduct."Item SystemId") then
+            if Item.GetBySystemId(ShopifyProduct."Item SystemId") then
+                SKUPrecheckCU.SanitizeItemMarketingText(Item);
+
+        CurrentDescHtml := GetProductDescriptionHtml(ShopifyProduct);
+        if CurrentDescHtml <> '' then begin
+            CleanDescHtml := SKUPrecheckCU.CleanMarketingHtmlForGraphQL(CurrentDescHtml);
+            if CleanDescHtml <> CurrentDescHtml then
+                SetProductDescriptionHtml(ShopifyProduct, CleanDescHtml);
+        end;
+    end;
+
+    local procedure GetProductDescriptionHtml(var ShopifyProduct: Record "Shpfy Product"): Text
+    var
+        InStr: InStream;
+        Content: Text;
+        Result: TextBuilder;
+    begin
+        ShopifyProduct.CalcFields("Description as HTML");
+        if not ShopifyProduct."Description as HTML".HasValue() then
+            exit('');
+
+        ShopifyProduct."Description as HTML".CreateInStream(InStr, TextEncoding::UTF8);
+        while not InStr.EOS() do begin
+            InStr.ReadText(Content);
+            Result.Append(Content);
+        end;
+        exit(Result.ToText());
+    end;
+
+    local procedure SetProductDescriptionHtml(var ShopifyProduct: Record "Shpfy Product"; NewHtml: Text)
+    var
+        OutStr: OutStream;
+    begin
+        Clear(ShopifyProduct."Description as HTML");
+        if NewHtml <> '' then begin
+            ShopifyProduct."Description as HTML".CreateOutStream(OutStr, TextEncoding::UTF8);
+            OutStr.WriteText(NewHtml);
+        end;
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Shpfy Product Events", 'OnAfterCreateTempShopifyProduct', '', false, false)]
+    local procedure SanitizeOnAfterCreateTempShopifyProduct(Item: Record Item; var ShopifyProduct: Record "Shpfy Product"; var ShopifyVariant: Record "Shpfy Variant"; var ShopifyTag: Record "Shpfy Tag")
+    var
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
+    begin
+        SKUPrecheckCU.SanitizeItemMarketingText(Item);
     end;
 
     local procedure PopulateVariantMetafields(ProductId: BigInteger; DescriptionText: Text; ItemNo: Code[20]; ShopCode: Code[20])

@@ -942,24 +942,398 @@ codeunit 90304 "APSS Shopify SKU Precheck"
     /// </summary>
     procedure SanitizeItemMarketingText(Item: Record Item)
     var
+        ActualItem: Record Item;
         EntityText: Codeunit "Entity Text";
         EntityTextRec: Record "Entity Text";
         EntityTextScenario: Enum "Entity Text Scenario";
         MarketingText: Text;
-        CleanText: Text;
+        CleanHtml: Text;
+        TargetGuid: Guid;
+        Updated: Boolean;
     begin
-        MarketingText := EntityText.GetText(Database::Item, Item.SystemId, EntityTextScenario::"Marketing Text");
+        TargetGuid := Item.SystemId;
+        if IsNullGuid(TargetGuid) and (Item."No." <> '') then
+            if ActualItem.Get(Item."No.") then
+                TargetGuid := ActualItem.SystemId;
+
+        if IsNullGuid(TargetGuid) then
+            exit;
+
+        MarketingText := EntityText.GetText(Database::Item, TargetGuid, EntityTextScenario::"Marketing Text");
         if MarketingText = '' then
             exit;
 
-        if MarketingText.Contains('data:image/') or MarketingText.Contains(';base64,') or MarketingText.ToLower().Contains('<img') then begin
-            CleanText := RemoveEmbeddedImagesFromHtml(MarketingText);
-            EntityTextRec.SetRange("Source Table Id", Database::Item);
-            EntityTextRec.SetRange("Source System Id", Item.SystemId);
-            EntityTextRec.SetRange(Scenario, EntityTextScenario::"Marketing Text");
-            if EntityTextRec.FindFirst() then
-                EntityTextRec.Delete(true);
+        if NeedsSanitization(MarketingText) then begin
+            CleanHtml := ConvertMarketingTextToCleanHtml(MarketingText);
+
+            // Primary Key: (Company, "Source Table Id", "Source System Id", Scenario)
+            if EntityTextRec.Get(CompanyName(), Database::Item, TargetGuid, EntityTextScenario::"Marketing Text") then begin
+                EntityText.UpdateText(EntityTextRec, CleanHtml);
+                EntityTextRec.Modify(true);
+                Updated := true;
+            end else if EntityTextRec.Get('', Database::Item, TargetGuid, EntityTextScenario::"Marketing Text") then begin
+                EntityText.UpdateText(EntityTextRec, CleanHtml);
+                EntityTextRec.Modify(true);
+                Updated := true;
+            end else begin
+                // Fallback scan across company scopes
+                EntityTextRec.Reset();
+                EntityTextRec.SetRange("Source Table Id", Database::Item);
+                EntityTextRec.SetRange("Source System Id", TargetGuid);
+                EntityTextRec.SetRange(Scenario, EntityTextScenario::"Marketing Text");
+                if EntityTextRec.FindSet(true) then
+                    repeat
+                        EntityText.UpdateText(EntityTextRec, CleanHtml);
+                        EntityTextRec.Modify(true);
+                        Updated := true;
+                    until EntityTextRec.Next() = 0;
+            end;
+
+            if Updated then begin
+                Commit();
+                LogSanitizationAudit(Item."No.", StrLen(MarketingText), StrLen(CleanHtml));
+            end;
         end;
+    end;
+
+    local procedure NeedsSanitization(MarketingText: Text): Boolean
+    var
+        TabChar: Char;
+        Trimmed: Text;
+    begin
+        TabChar := 9;
+        Trimmed := MarketingText.Trim();
+        if Trimmed = '' then
+            exit(false);
+
+        if Trimmed.Contains('data:image/') or Trimmed.Contains(';base64,') or Trimmed.ToLower().Contains('<img') or
+           Trimmed.Contains(Format(TabChar)) or Trimmed.Contains('\t') then
+            exit(true);
+
+        // Re-sanitize if table contains empty or spacer <td> cells
+        if Trimmed.Contains('<td></td>') or Trimmed.Contains('<td> </td>') or Trimmed.Contains('<td>&nbsp;</td>') or
+           Trimmed.Contains('<td><br></td>') or Trimmed.Contains('<td><p></p></td>') then
+            exit(true);
+
+        if not (Trimmed.StartsWith('<p') or Trimmed.StartsWith('<div') or Trimmed.StartsWith('<table') or Trimmed.StartsWith('<html') or Trimmed.StartsWith('<body')) then
+            exit(true);
+
+        exit(false);
+    end;
+
+    procedure CleanMarketingHtmlForGraphQL(InputText: Text): Text
+    var
+        Clean: Text;
+        CRChar: Char;
+        LFChar: Char;
+        TabChar: Char;
+    begin
+        if InputText.Trim() = '' then
+            exit('');
+
+        CRChar := 13;
+        LFChar := 10;
+        TabChar := 9;
+
+        // Auto-convert raw plain text to clean structured HTML before cleaning
+        if not (InputText.Trim().StartsWith('<p') or InputText.Trim().StartsWith('<div') or InputText.Trim().StartsWith('<table') or InputText.Trim().StartsWith('<html') or InputText.Trim().StartsWith('<body') or InputText.Trim().StartsWith('<span')) then
+            Clean := ConvertMarketingTextToCleanHtml(InputText)
+        else
+            Clean := InputText;
+
+        // 1. Unescape any double-escaped entities
+        Clean := Clean.Replace('&lt;', '<').Replace('&gt;', '>').Replace('&quot;', '''');
+
+        // 2. Convert all double quotes inside HTML to single quotes so GraphQL string literal isn't broken
+        Clean := Clean.Replace('"', '''');
+
+        // 3. Remove all physical newlines and tabs (replace tabs with space, remove \r and \n)
+        Clean := Clean.Replace(Format(TabChar), ' ').Replace('\t', ' ');
+        Clean := Clean.Replace(Format(CRChar), ' ').Replace(Format(LFChar), ' ');
+
+        // 4. Sanitize and realign any table rows inside the HTML (removes empty spacer cells, enforces 2 columns)
+        Clean := SanitizeHtmlTablesInBody(Clean);
+
+        // 5. Collapse multiple spaces
+        while Clean.Contains('  ') do
+            Clean := Clean.Replace('  ', ' ');
+
+        exit(Clean.Trim());
+    end;
+
+    local procedure ConvertMarketingTextToCleanHtml(InputText: Text): Text
+    var
+        Result: TextBuilder;
+        Lines: List of [Text];
+        Tokens: List of [Text];
+        LineText: Text;
+        KeyPart: Text;
+        ValPart: Text;
+        TrimmedLine: Text;
+        InTable: Boolean;
+        TabChar: Char;
+        LFChar: Char;
+        CRChar: Char;
+        i: Integer;
+        IsFirstLine: Boolean;
+    begin
+        if InputText.Trim() = '' then
+            exit('');
+
+        // Unescape any previously double-escaped entities
+        InputText := InputText.Replace('&lt;', '<').Replace('&gt;', '>').Replace('&quot;', '"');
+        InputText := RemoveEmbeddedImagesFromHtml(InputText);
+        TabChar := 9;
+        LFChar := 10;
+        CRChar := 13;
+
+        // Split text into lines by LF
+        Lines := InputText.Split(Format(LFChar));
+        InTable := false;
+        IsFirstLine := true;
+        Result.Clear();
+
+        foreach LineText in Lines do begin
+            TrimmedLine := LineText.Replace(Format(CRChar), '').Trim();
+
+            if TrimmedLine = '' then begin
+                if InTable then begin
+                    Result.Append('</table>');
+                    InTable := false;
+                end;
+            end else begin
+                Tokens := SplitLineByTabs(TrimmedLine);
+                if Tokens.Count() >= 2 then begin
+                    if not InTable then begin
+                        InTable := true;
+                        Result.Append('<table style=''width:100%; border-collapse:collapse; margin-top:8px; margin-bottom:12px; font-size:14px;''>');
+                    end;
+
+                    KeyPart := Tokens.Get(1).Trim();
+                    ValPart := '';
+                    for i := 2 to Tokens.Count() do begin
+                        if ValPart <> '' then
+                            ValPart += ' ';
+                        ValPart += Tokens.Get(i).Trim();
+                    end;
+
+                    Result.Append('<tr><td style=''padding:6px 10px; border:1px solid #cbd5e1; background-color:#f8fafc; font-weight:600; width:35%;''>' + EscapeHtmlSpecialChars(KeyPart) + '</td>');
+                    Result.Append('<td style=''padding:6px 10px; border:1px solid #cbd5e1;''>' + EscapeHtmlSpecialChars(ValPart) + '</td></tr>');
+                    IsFirstLine := false;
+                end else begin
+                    if InTable then begin
+                        Result.Append('</table>');
+                        InTable := false;
+                    end;
+
+                    if IsSectionHeader(TrimmedLine) then
+                        Result.Append('<p style=''font-weight:bold; font-size:15px; margin-top:12px; margin-bottom:6px; color:#1e293b;''>' + EscapeHtmlSpecialChars(TrimmedLine) + '</p>')
+                    else if TrimmedLine.Contains('<') and TrimmedLine.Contains('>') then
+                        Result.Append(TrimmedLine.Replace('"', ''''))
+                    else if IsFirstLine then
+                        Result.Append('<p style=''font-size:14pt; font-weight:bold; margin-bottom:8px; color:#0f172a;''>' + EscapeHtmlSpecialChars(TrimmedLine) + '</p>')
+                    else if TrimmedLine.StartsWith('✔') or TrimmedLine.StartsWith('•') or TrimmedLine.StartsWith('- ') or TrimmedLine.StartsWith('* ') then
+                        Result.Append('<p style=''margin:4px 0 4px 12px; line-height:1.5;''>' + EscapeHtmlSpecialChars(TrimmedLine) + '</p>')
+                    else
+                        Result.Append('<p style=''margin:6px 0; line-height:1.5;''>' + EscapeHtmlSpecialChars(TrimmedLine) + '</p>');
+
+                    IsFirstLine := false;
+                end;
+            end;
+        end;
+
+        if InTable then
+            Result.Append('</table>');
+
+        exit(SanitizeHtmlTablesInBody(Result.ToText().Replace(Format(CRChar), '').Replace(Format(LFChar), '').Trim()));
+    end;
+
+    local procedure SplitLineByTabs(LineText: Text): List of [Text]
+    var
+        Tokens: List of [Text];
+        RawTokens: List of [Text];
+        Tok: Text;
+        TabChar: Char;
+        Normalized: Text;
+    begin
+        TabChar := 9;
+        Normalized := LineText.Replace('\t', Format(TabChar));
+        RawTokens := Normalized.Split(Format(TabChar));
+        foreach Tok in RawTokens do
+            if Tok.Trim() <> '' then
+                Tokens.Add(Tok.Trim());
+        exit(Tokens);
+    end;
+
+    local procedure SanitizeHtmlTablesInBody(InputHtml: Text): Text
+    var
+        Result: TextBuilder;
+        LowerHtml: Text;
+        CurrentPos: Integer;
+        TrStart: Integer;
+        TrEnd: Integer;
+        RowContent: Text;
+        CleanRow: Text;
+    begin
+        if (not InputHtml.ToLower().Contains('<tr')) and (not InputHtml.ToLower().Contains('<table')) then
+            exit(InputHtml);
+
+        LowerHtml := InputHtml.ToLower();
+        CurrentPos := 1;
+        Result.Clear();
+
+        while CurrentPos <= StrLen(InputHtml) do begin
+            TrStart := StrPos(CopyStr(LowerHtml, CurrentPos), '<tr');
+            if TrStart = 0 then begin
+                Result.Append(CopyStr(InputHtml, CurrentPos));
+                CurrentPos := StrLen(InputHtml) + 1;
+            end else begin
+                if TrStart > 1 then
+                    Result.Append(CopyStr(InputHtml, CurrentPos, TrStart - 1));
+
+                CurrentPos := CurrentPos + TrStart - 1;
+                LowerHtml := InputHtml.ToLower();
+
+                TrEnd := StrPos(CopyStr(LowerHtml, CurrentPos), '</tr>');
+                if TrEnd = 0 then begin
+                    Result.Append(CopyStr(InputHtml, CurrentPos));
+                    CurrentPos := StrLen(InputHtml) + 1;
+                end else begin
+                    RowContent := CopyStr(InputHtml, CurrentPos, TrEnd + 4);
+                    CleanRow := SanitizeSingleTableRow(RowContent);
+                    Result.Append(CleanRow);
+                    CurrentPos := CurrentPos + TrEnd + 5;
+                end;
+            end;
+            LowerHtml := InputHtml.ToLower();
+        end;
+
+        exit(Result.ToText());
+    end;
+
+    local procedure SanitizeSingleTableRow(RowHtml: Text): Text
+    var
+        Cells: List of [Text];
+        LowerRow: Text;
+        CurrentPos: Integer;
+        TdStart: Integer;
+        TdCloseTag: Integer;
+        TdEnd: Integer;
+        CellContent: Text;
+        CleanCellText: Text;
+        KeyCell: Text;
+        ValCell: Text;
+        i: Integer;
+    begin
+        LowerRow := RowHtml.ToLower();
+        CurrentPos := 1;
+
+        while CurrentPos <= StrLen(RowHtml) do begin
+            TdStart := StrPos(CopyStr(LowerRow, CurrentPos), '<td');
+            if TdStart = 0 then
+                TdStart := StrPos(CopyStr(LowerRow, CurrentPos), '<th');
+
+            if TdStart = 0 then
+                CurrentPos := StrLen(RowHtml) + 1
+            else begin
+                CurrentPos := CurrentPos + TdStart - 1;
+                LowerRow := RowHtml.ToLower();
+
+                TdCloseTag := StrPos(CopyStr(LowerRow, CurrentPos), '>');
+                if TdCloseTag = 0 then
+                    CurrentPos := StrLen(RowHtml) + 1
+                else begin
+                    CurrentPos := CurrentPos + TdCloseTag;
+                    LowerRow := RowHtml.ToLower();
+
+                    TdEnd := StrPos(CopyStr(LowerRow, CurrentPos), '</td>');
+                    if TdEnd = 0 then
+                        TdEnd := StrPos(CopyStr(LowerRow, CurrentPos), '</th>');
+
+                    if TdEnd = 0 then begin
+                        CellContent := CopyStr(RowHtml, CurrentPos);
+                        CurrentPos := StrLen(RowHtml) + 1;
+                    end else begin
+                        CellContent := CopyStr(RowHtml, CurrentPos, TdEnd - 1);
+                        CurrentPos := CurrentPos + TdEnd + 4;
+                    end;
+
+                    CleanCellText := StripHtmlTags(CellContent);
+                    if CleanCellText <> '' then
+                        Cells.Add(CleanCellText);
+                end;
+            end;
+            LowerRow := RowHtml.ToLower();
+        end;
+
+        if Cells.Count() = 0 then
+            exit('');
+
+        if Cells.Count() = 1 then
+            exit('<tr><td colspan=''2'' style=''padding:6px 10px; border:1px solid #cbd5e1; font-weight:600;''>' + Cells.Get(1) + '</td></tr>');
+
+        KeyCell := Cells.Get(1);
+        ValCell := '';
+        for i := 2 to Cells.Count() do begin
+            if ValCell <> '' then
+                ValCell += ' ';
+            ValCell += Cells.Get(i);
+        end;
+
+        exit('<tr><td style=''padding:6px 10px; border:1px solid #cbd5e1; background-color:#f8fafc; font-weight:600; width:35%;''>' + KeyCell + '</td><td style=''padding:6px 10px; border:1px solid #cbd5e1;''>' + ValCell + '</td></tr>');
+    end;
+
+    local procedure StripHtmlTags(InputText: Text): Text
+    var
+        Result: TextBuilder;
+        InsideTag: Boolean;
+        i: Integer;
+        c: Char;
+    begin
+        InsideTag := false;
+        for i := 1 to StrLen(InputText) do begin
+            c := InputText[i];
+            if c = '<' then
+                InsideTag := true
+            else if c = '>' then
+                InsideTag := false
+            else if not InsideTag then
+                Result.Append(c);
+        end;
+        exit(Result.ToText().Replace('&nbsp;', ' ').Replace('  ', ' ').Trim());
+    end;
+
+    local procedure IsSectionHeader(LineText: Text): Boolean
+    var
+        Lower: Text;
+    begin
+        Lower := LineText.ToLower().Trim();
+        exit((Lower = 'item attributes') or (Lower = 'marketing text') or (Lower = 'key features:') or (Lower = 'key features') or
+             (Lower = 'features:') or (Lower = 'features') or (Lower = 'specifications:') or (Lower = 'specifications'));
+    end;
+
+    local procedure EscapeHtmlSpecialChars(InputStr: Text): Text
+    var
+        Clean: Text;
+    begin
+        Clean := InputStr;
+        Clean := Clean.Replace('"', '''');
+        exit(Clean);
+    end;
+
+    local procedure LogSanitizationAudit(ItemNo: Code[20]; OrigLen: Integer; NewLen: Integer)
+    var
+        DiagLog: Record "APSS Diagnostic Log";
+    begin
+        Clear(DiagLog);
+        DiagLog."Date Time" := CurrentDateTime();
+        DiagLog."Session ID" := SessionId();
+        DiagLog.Context := 'SanitizeMarketingText';
+        DiagLog."Item No." := ItemNo;
+        DiagLog."Event Called" := true;
+        DiagLog."Calc Succeeded" := true;
+        DiagLog.Details := CopyStr(StrSubstNo('Converted raw Marketing Text (%1 chars) to clean HTML table & paragraphs (%2 chars)', OrigLen, NewLen), 1, MaxStrLen(DiagLog.Details));
+        DiagLog.Insert(true);
     end;
 
     /// <summary>
