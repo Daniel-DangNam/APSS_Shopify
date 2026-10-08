@@ -25,7 +25,10 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
     end;
 
     procedure RefreshItem(var Item: Record Item)
+    var
+        SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
     begin
+        SKUPrecheckCU.SanitizeItemMarketingText(Item);
         EvaluateItemReadiness(Item);
         Item.Modify(false);
     end;
