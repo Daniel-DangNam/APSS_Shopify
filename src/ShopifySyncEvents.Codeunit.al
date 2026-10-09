@@ -109,20 +109,22 @@ codeunit 90302 "APSS Shopify Sync Events"
                         SKUPrecheckCU.SanitizeItemMarketingText(Item);
                         IsEligible := SKUPrecheckCU.EvaluateItemSyncEligibility(Shop.Code, Item, BatchSKUsList, SyncAction, ReasonText);
 
-                        if IsEligible and ProductTitleCU.IsItemApproved(Item) and (Item.Picture.Count() > 0) then begin
+                        if IsEligible and ProductTitleCU.IsItemApproved(Item) and (Item.Picture.Count() > 0) then
+                            ValidProductCount += 1
+                        else begin
                             if FilterBuilder.Length() > 0 then
-                                FilterBuilder.Append('|');
-                            FilterBuilder.Append(Format(ProductLoop."Item SystemId", 0, 4));
-                            ValidProductCount += 1;
-                        end else if not IsEligible then
-                            DeleteSingleGhostProduct(ProductLoop);
+                                FilterBuilder.Append('&');
+                            FilterBuilder.Append('<>' + Format(ProductLoop."Item SystemId", 0, 4));
+                            if not IsEligible then
+                                DeleteSingleGhostProduct(ProductLoop);
+                        end;
                     end;
             until ProductLoop.Next() = 0;
 
-        if ValidProductCount > 0 then
-            ShopifyProduct.SetFilter("Item SystemId", FilterBuilder.ToText())
-        else
-            ShopifyProduct.SetRange("Item SystemId", CreateGuid()); // Block sync completely if no items pass approval and image gate
+        if ValidProductCount = 0 then
+            ShopifyProduct.SetRange("Item SystemId", CreateGuid()) // Block sync completely if no items pass approval and image gate
+        else if (FilterBuilder.Length() > 0) and (SelectedModifiedItemFilter = '') then
+            ShopifyProduct.SetFilter("Item SystemId", FilterBuilder.ToText());
     end;
 
     // PRICING FIX: OVERRIDE CALCULATE UNIT PRICE WITH QUANTITY 1.0 TO CAPTURE SALES PRICE 123.45 & PREVENT UOM OVERWRITE
