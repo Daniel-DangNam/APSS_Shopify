@@ -64,12 +64,13 @@ codeunit 90303 "APSS Shopify Email Mgt."
 
     local procedure BuildSuccessHtmlBody(ShopCode: Code[20]; var SelectedItem: Record Item temporary; NewCount: Integer; ModifiedCount: Integer): Text
     var
-        ShpfyProduct: Record "Shpfy Product";
+        ReadinessMgt: Codeunit "APSS Shopify Readiness Mgt.";
+        ReconcileLog: Record "APSS Shpfy Reconcile Log";
+        SyncStatus: Enum "APSS Shopify Item Sync Status";
         BodyBuilder: TextBuilder;
         TableRowsBuilder: TextBuilder;
         StatusBadgeHtml: Text;
         ItemDetailsHtml: Text;
-        IsSynced: Boolean;
         FailedCount: Integer;
         SuccessCount: Integer;
         HeaderColor: Text;
@@ -80,19 +81,25 @@ codeunit 90303 "APSS Shopify Email Mgt."
 
         if SelectedItem.FindSet() then
             repeat
-                ShpfyProduct.Reset();
-                ShpfyProduct.SetRange("Shop Code", ShopCode);
-                ShpfyProduct.SetRange("Item SystemId", SelectedItem.SystemId);
-                IsSynced := ShpfyProduct.FindFirst() and (ShpfyProduct.Id <> 0);
+                SyncStatus := ReadinessMgt.GetItemSyncStatus(SelectedItem);
 
-                if IsSynced then begin
+                if SyncStatus = Enum::"APSS Shopify Item Sync Status"::"Synced Unchanged" then begin
                     SuccessCount += 1;
                     StatusBadgeHtml := '<span style="background-color: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">SYNCED</span>';
                     ItemDetailsHtml := '<span style="color: #166534; font-size: 12px;">Synced successfully</span>';
                 end else begin
                     FailedCount += 1;
                     StatusBadgeHtml := '<span style="background-color: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;">FAILED</span>';
-                    ItemDetailsHtml := '<span style="color: #dc2626; font-size: 12px; font-weight: 600;">Not synced (Check Shopify Reconcile Log for details)</span>';
+                    
+                    ReconcileLog.Reset();
+                    ReconcileLog.SetRange("Item No.", SelectedItem."No.");
+                    ReconcileLog.SetRange(Resolved, false);
+                    if ReconcileLog.FindLast() and (ReconcileLog.Details <> '') then
+                        ItemDetailsHtml := StrSubstNo('<span style="color: #dc2626; font-size: 12px; font-weight: 600;">%1</span>', ReconcileLog.Details)
+                    else if SelectedItem."APSS Shopify Validation" <> '' then
+                        ItemDetailsHtml := StrSubstNo('<span style="color: #dc2626; font-size: 12px; font-weight: 600;">%1</span>', SelectedItem."APSS Shopify Validation")
+                    else
+                        ItemDetailsHtml := '<span style="color: #dc2626; font-size: 12px; font-weight: 600;">Not updated (Pending review)</span>';
                 end;
 
                 TableRowsBuilder.Append('<tr>');

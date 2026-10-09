@@ -38,6 +38,7 @@ codeunit 90306 "APSS Shopify Auto Sync Job"
         ModifiedCount: Integer;
         SkippedSKUCount: Integer;
         BatchCounter: Integer;
+        ChunkFailCount: Integer;
         ErrText: Text;
         ReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Add Item to Shopify" id="30106"><Options><Field name="ShopCode">%1</Field><Field name="SyncImages">false</Field><Field name="SyncInventory">true</Field></Options><DataItems><DataItem name="Item">%2</DataItem></DataItems></ReportParameters>', Locked = true;
         SyncProductsReportParametersTxt: Label '<?xml version="1.0" standalone="yes"?><ReportParameters name="Shpfy Sync Products" id="30108"><Options><Field name="OnlySyncPrices">false</Field></Options><DataItems><DataItem name="Shop">VERSION(1) SORTING(Code) WHERE(Code=1(%1))</DataItem></DataItems></ReportParameters>', Locked = true;
@@ -83,6 +84,7 @@ codeunit 90306 "APSS Shopify Auto Sync Job"
         NewCount := 0;
         ModifiedCount := 0;
         SkippedSKUCount := 0;
+        ChunkFailCount := 0;
         Clear(BatchSKUsList);
 
         if ReadyItem.FindSet() then
@@ -113,6 +115,7 @@ codeunit 90306 "APSS Shopify Auto Sync Job"
         end;
 
         // 3. Process New Ready Items through Add Item Report (30106) in chunks of 100
+        // Fault-tolerant: If one chunk encounters an error, log details and continue remaining chunks
         if TempNewItem.FindSet() then begin
             BatchCounter := 0;
             Clear(ChunkFilterBuilder);
@@ -128,10 +131,9 @@ codeunit 90306 "APSS Shopify Auto Sync Job"
                     ParametersXml := StrSubstNo(ReportParametersTxt, ShopifyShop.Code, FilterNewItem.GetView(false));
                     Commit();
                     if not TryExecuteAddItemReport(ParametersXml) then begin
+                        ChunkFailCount += 1;
                         ErrText := GetLastErrorText();
-                        EmailMgt.SendErrorNotification(ShopifyShop.Code, ReadyItem, 'Shopify Auto Sync Add Item Failure', ErrText);
-                        LogDiag('AutoSync:AddItemFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, 'Failed adding chunk of new item(s).');
-                        Error('Shopify Auto Sync Add Item Failure: %1', ErrText);
+                        LogDiag('AutoSync:AddItemChunkFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, StrSubstNo('Failed adding chunk of new item(s). %1', ChunkFilterBuilder.ToText()));
                     end;
                     Commit();
                     Clear(ChunkFilterBuilder);
@@ -145,16 +147,16 @@ codeunit 90306 "APSS Shopify Auto Sync Job"
                 ParametersXml := StrSubstNo(ReportParametersTxt, ShopifyShop.Code, FilterNewItem.GetView(false));
                 Commit();
                 if not TryExecuteAddItemReport(ParametersXml) then begin
+                    ChunkFailCount += 1;
                     ErrText := GetLastErrorText();
-                    EmailMgt.SendErrorNotification(ShopifyShop.Code, ReadyItem, 'Shopify Auto Sync Add Item Failure', ErrText);
-                    LogDiag('AutoSync:AddItemFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, 'Failed adding chunk of new item(s).');
-                    Error('Shopify Auto Sync Add Item Failure: %1', ErrText);
+                    LogDiag('AutoSync:AddItemChunkFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, StrSubstNo('Failed adding chunk of new item(s). %1', ChunkFilterBuilder.ToText()));
                 end;
                 Commit();
             end;
         end;
 
         // 4. Process Modified Ready Items through Sync Products Report (30108) in chunks of 100
+        // Fault-tolerant: If one chunk encounters an error, log details and continue remaining chunks
         if TempModifiedItem.FindSet() then begin
             BatchCounter := 0;
             Clear(ChunkFilterBuilder);
@@ -169,11 +171,9 @@ codeunit 90306 "APSS Shopify Auto Sync Job"
                     ParametersXml := StrSubstNo(SyncProductsReportParametersTxt, ShopifyShop.Code);
                     Commit();
                     if not TryExecuteSyncProductsReport(ParametersXml) then begin
-                        SyncEvents.ClearSelectedModifiedItemFilter();
+                        ChunkFailCount += 1;
                         ErrText := GetLastErrorText();
-                        EmailMgt.SendErrorNotification(ShopifyShop.Code, ReadyItem, 'Shopify Auto Sync Product Update Failure', ErrText);
-                        LogDiag('AutoSync:SyncProductsFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, 'Failed updating modified item chunk.');
-                        Error('Shopify Auto Sync Product Update Failure: %1', ErrText);
+                        LogDiag('AutoSync:SyncProductsChunkFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, 'Failed updating modified item chunk.');
                     end;
                     SyncEvents.ClearSelectedModifiedItemFilter();
                     Commit();
@@ -187,11 +187,9 @@ codeunit 90306 "APSS Shopify Auto Sync Job"
                 ParametersXml := StrSubstNo(SyncProductsReportParametersTxt, ShopifyShop.Code);
                 Commit();
                 if not TryExecuteSyncProductsReport(ParametersXml) then begin
-                    SyncEvents.ClearSelectedModifiedItemFilter();
+                    ChunkFailCount += 1;
                     ErrText := GetLastErrorText();
-                    EmailMgt.SendErrorNotification(ShopifyShop.Code, ReadyItem, 'Shopify Auto Sync Product Update Failure', ErrText);
-                    LogDiag('AutoSync:SyncProductsFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, 'Failed updating modified item chunk.');
-                    Error('Shopify Auto Sync Product Update Failure: %1', ErrText);
+                    LogDiag('AutoSync:SyncProductsChunkFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, 'Failed updating modified item chunk.');
                 end;
                 SyncEvents.ClearSelectedModifiedItemFilter();
                 Commit();
@@ -203,14 +201,13 @@ codeunit 90306 "APSS Shopify Auto Sync Job"
         Commit();
         if not TryExecuteSyncImagesReport(ParametersXml) then begin
             ErrText := GetLastErrorText();
-            EmailMgt.SendErrorNotification(ShopifyShop.Code, ReadyItem, 'Shopify Auto Sync Image Failure', ErrText);
             LogDiag('AutoSync:SyncImagesFailed', '', ShopifyShop.Code, true, false, 0, 0D, ErrText, 'Failed syncing product images.');
-            Error('Shopify Auto Sync Image Failure: %1', ErrText);
         end;
+        Commit();
 
-        // 6. Send HTML summary email to Procurement & Log Success
+        // 6. Send comprehensive HTML summary email with full breakdown (Synced vs Failed items)
         EmailMgt.SendSyncNotification(ShopifyShop.Code, ReadyItem, NewCount, ModifiedCount);
-        LogDiag('AutoSync:Success', '', ShopifyShop.Code, true, true, 0, 0D, '', StrSubstNo('Successfully auto-synced %1 new item(s) and %2 modified item(s). %3 skipped.', NewCount, ModifiedCount, SkippedSKUCount));
+        LogDiag('AutoSync:Success', '', ShopifyShop.Code, true, true, 0, 0D, '', StrSubstNo('Completed auto sync: %1 new item(s), %2 modified item(s). %3 skipped, %4 chunk error(s).', NewCount, ModifiedCount, SkippedSKUCount, ChunkFailCount));
     end;
 
     [TryFunction]
