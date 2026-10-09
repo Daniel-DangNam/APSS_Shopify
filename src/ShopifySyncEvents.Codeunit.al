@@ -612,7 +612,7 @@ codeunit 90302 "APSS Shopify Sync Events"
         ShopifyProduct."Description as HTML".CreateInStream(InStr, TextEncoding::UTF8);
         while not InStr.EOS() do begin
             InStr.ReadText(Content);
-            Result.Append(Content);
+            Result.AppendLine(Content);
         end;
         exit(Result.ToText());
     end;
