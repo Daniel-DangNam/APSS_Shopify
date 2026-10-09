@@ -230,6 +230,24 @@ pageextension 90300 "APSS Item List Shopify" extends "Item List"
                     end;
                 end;
             }
+            action("Auto Sync Ready Items")
+            {
+                ApplicationArea = All;
+                Caption = 'Auto Sync Ready Items (Run Now)';
+                Image = Refresh;
+                Promoted = true;
+                PromotedCategory = Process;
+                ToolTip = 'Executes the background Auto Sync Job immediately for all New Ready and Modified Ready items, exactly like the scheduled Job Queue.';
+
+                trigger OnAction()
+                var
+                    AutoSyncJob: Codeunit "APSS Shopify Auto Sync Job";
+                begin
+                    AutoSyncJob.RunAutoSync('');
+                    Message('Auto Sync completed. All ready items have been evaluated and synchronized to Shopify.');
+                    CurrPage.Update(false);
+                end;
+            }
             action("Shopify Reconcile Log")
             {
                 ApplicationArea = All;

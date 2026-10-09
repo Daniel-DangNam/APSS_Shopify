@@ -27,10 +27,19 @@ codeunit 90301 "APSS Shopify Readiness Mgt."
     procedure RefreshItem(var Item: Record Item)
     var
         SKUPrecheckCU: Codeunit "APSS Shopify SKU Precheck";
+        OldReady: Boolean;
+        OldHasImage: Boolean;
+        OldValidation: Text[250];
     begin
+        OldReady := Item."APSS Shopify Ready";
+        OldHasImage := Item."APSS Has Shopify Image";
+        OldValidation := Item."APSS Shopify Validation";
+
         SKUPrecheckCU.SanitizeItemMarketingText(Item);
         EvaluateItemReadiness(Item);
-        Item.Modify(false);
+
+        if (OldReady <> Item."APSS Shopify Ready") or (OldHasImage <> Item."APSS Has Shopify Image") or (OldValidation <> Item."APSS Shopify Validation") then
+            Item.Modify(false);
     end;
 
     procedure RefreshAllItems()

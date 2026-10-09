@@ -1035,8 +1035,9 @@ codeunit 90304 "APSS Shopify SKU Precheck"
         LFChar := 10;
         TabChar := 9;
 
-        // Auto-convert raw plain text to clean structured HTML before cleaning
-        if not (InputText.Trim().StartsWith('<p') or InputText.Trim().StartsWith('<div') or InputText.Trim().StartsWith('<table') or InputText.Trim().StartsWith('<html') or InputText.Trim().StartsWith('<body') or InputText.Trim().StartsWith('<span')) then
+        // Auto-convert raw plain text or tabbed specs to clean structured HTML before cleaning
+        if (not (InputText.Trim().StartsWith('<p') or InputText.Trim().StartsWith('<div') or InputText.Trim().StartsWith('<table') or InputText.Trim().StartsWith('<html') or InputText.Trim().StartsWith('<body') or InputText.Trim().StartsWith('<span'))) or
+           (InputText.Contains(Format(TabChar)) or InputText.Contains('\t')) then
             Clean := ConvertMarketingTextToCleanHtml(InputText)
         else
             Clean := InputText;
