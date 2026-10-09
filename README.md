@@ -155,7 +155,7 @@ APSS_Shopify/
 Compile the extension package using Microsoft AL Compiler (`alc.exe`):
 
 ```cmd
-alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enhancements_1.0.0.25.app"
+alc.exe /project:"." /packagecachepath:".alpackages" /out:"APSS_APSS Shopify Enhancements_1.0.0.26.app"
 ```
 
 ### Deployment Configuration (`launch.json`)
@@ -191,6 +191,7 @@ For full architectural breakdown, execution trace logs, historical and current E
 | **Phase 3 Dynamic OAuth Token Refresh**      | **PASS** (Client Credentials flow, 24h token auto-refresh, IsolatedStorage security verified)                    |
 | **Phase 3 Reconcile Log UI & Bulk Actions**  | **PASS** (Checkboxes, Select All, Deselect All, Mark as Resolved, Delete Selected verified)                      |
 | **Automated HTML Email Notification System** | **PASS** (Configurable setup, zero hardcoding, Success & Error HTML templates verified)                          |
-| **AL Code Compilation (`alc.exe`)**          | **PASS** (`0` errors, `0` warnings, version `1.0.0.25`)                                                          |
+| **Auto Sync Background Job Queue (CU 90306)**| **PASS** (Automated scheduled scan, New Ready / Modified Ready automatic sync, HTML table formatting)             |
+| **AL Code Compilation (`alc.exe`)**          | **PASS** (`0` errors, `0` warnings, version `1.0.0.26`)                                                          |
 | **Kathy/June Requirement Refactor**          | **Code Implemented** (Field mapping, Title anti-duplication, SEO, Inventory sync, Report 30106/30108 separation) |
 | **Production Deployment Status**             | **Implementation in progress / Sandbox verification required / Not production-ready**                            |
